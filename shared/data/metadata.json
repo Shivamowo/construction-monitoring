@@ -1,0 +1,264 @@
+{
+  "projectId": "00tMo7QcxqWdIGvc4sMN2A",
+  "projectName": "Schependomlaan",
+  "overallTimeline": {
+    "start": "2015-02-26",
+    "end": "2015-10-15"
+  },
+  "zonesList": [
+    "-1 fundering",
+    "00 begane grond",
+    "01 eerste verdieping",
+    "02 tweede verdieping",
+    "03 derde verdieping",
+    "04 dak",
+    "Unknown"
+  ],
+  "milestoneVocabulary": {
+    "Afstorten kanaalplaat": "Structure",
+    "Bekisten liftvloer": "Structure",
+    "Bekisten liftwanden": "Structure",
+    "Dakbedekking platte daken": "Envelope",
+    "Dakpannen": "Envelope",
+    "Dakramen": "Envelope",
+    "Installateurs": "MEP",
+    "Kanaalplaatvloer leggen (lev. week 16)": "Structure",
+    "Leggen breedplaat incl. Veiligheid": "Structure",
+    "Lijmwerk kalkzandsteen elementen": "Framing",
+    "Metselwerk": "Framing",
+    "Metselwerk onderpeil (buitenblad)": "Framing",
+    "Nuts invoeren": "MEP",
+    "Opstellen": "Framing",
+    "Opstorten fundering": "Structure",
+    "Plaatsen kozijnen": "Envelope",
+    "Plaatsen scharnierkap incl. goot en platte daken": "Framing",
+    "Plaatsen stalen kolommen": "Framing",
+    "Prefab betonband": "Structure",
+    "Prefab trappen en bordes": "Framing",
+    "Prefab trappen en bordes 2e verd.": "Framing",
+    "Randkist": "Structure",
+    "Staalconstuctie dak": "Framing",
+    "Stalen balken": "Framing",
+    "Stellen bruggetjes": "Structure",
+    "Stellen funderingkist incl. poeren": "Structure",
+    "Stelwerk /lijmwerk lift": "Framing",
+    "Stelwerk buitengevel": "Framing",
+    "Stelwerk kalkzandsteen": "Framing",
+    "Stelwerk metselwerk onder peil": "Framing",
+    "Stort": "Structure",
+    "Stort liftvloer": "Structure",
+    "Stort liftwanden": "Structure",
+    "Wapening": "Structure",
+    "Wapening liftvloer": "Structure",
+    "Wapening liftwanden": "Structure",
+    "Werkvloer liftput": "Structure",
+    "Zink goot": "Envelope",
+    "Zinken bekleding dakkapelen": "Envelope"
+  },
+  "milestoneMappingTable": [
+    {
+      "dutchTaskName": "Afstorten kanaalplaat",
+      "englishTaskName": "Grouting hollow-core slabs",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Bekisten liftvloer",
+      "englishTaskName": "Formwork elevator pit floor",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Bekisten liftwanden",
+      "englishTaskName": "Formwork elevator shaft walls",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Dakbedekking platte daken",
+      "englishTaskName": "Roofing flat roofs",
+      "milestoneClass": "Envelope"
+    },
+    {
+      "dutchTaskName": "Dakpannen",
+      "englishTaskName": "Roof tiles installation",
+      "milestoneClass": "Envelope"
+    },
+    {
+      "dutchTaskName": "Dakramen",
+      "englishTaskName": "Roof windows / skylights installation",
+      "milestoneClass": "Envelope"
+    },
+    {
+      "dutchTaskName": "Installateurs",
+      "englishTaskName": "MEP installers / subcontractors",
+      "milestoneClass": "MEP"
+    },
+    {
+      "dutchTaskName": "Kanaalplaatvloer leggen (lev. week 16)",
+      "englishTaskName": "Laying hollow-core floor slabs (delivery week 16)",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Leggen breedplaat incl. Veiligheid",
+      "englishTaskName": "Laying wide-slab precast floors incl. safety measures",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Lijmwerk kalkzandsteen elementen",
+      "englishTaskName": "Adhesive masonry calcium silicate elements",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Metselwerk",
+      "englishTaskName": "Bricklaying / masonry",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Metselwerk onderpeil (buitenblad)",
+      "englishTaskName": "Below-ground masonry (outer leaf)",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Nuts invoeren",
+      "englishTaskName": "Utility service conduit entry",
+      "milestoneClass": "MEP"
+    },
+    {
+      "dutchTaskName": "Opstellen",
+      "englishTaskName": "Site setup / assembly",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Opstorten fundering",
+      "englishTaskName": "Concrete pouring foundation",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Plaatsen kozijnen",
+      "englishTaskName": "Installing window/door frames",
+      "milestoneClass": "Envelope"
+    },
+    {
+      "dutchTaskName": "Plaatsen scharnierkap incl. goot en platte daken",
+      "englishTaskName": "Installing hinged roof structure incl. gutters and flat roofs",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Plaatsen stalen kolommen",
+      "englishTaskName": "Erecting structural steel columns",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Prefab betonband",
+      "englishTaskName": "Precast concrete edge beam",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Prefab trappen en bordes",
+      "englishTaskName": "Precast stairs and landings",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Prefab trappen en bordes 2e verd.",
+      "englishTaskName": "Precast stairs and landings 2nd floor",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Randkist",
+      "englishTaskName": "Edge formwork installation",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Staalconstuctie dak",
+      "englishTaskName": "Roof structural steelwork",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Stalen balken",
+      "englishTaskName": "Structural steel beams installation",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Stellen bruggetjes",
+      "englishTaskName": "Positioning temporary bridge supports",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Stellen funderingkist incl. poeren",
+      "englishTaskName": "Setting foundation formwork incl. pad footings",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Stelwerk /lijmwerk lift",
+      "englishTaskName": "Setting / gluing elevator shaft blocks",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Stelwerk buitengevel",
+      "englishTaskName": "Setting exterior facade profiles",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Stelwerk kalkzandsteen",
+      "englishTaskName": "Setting calcium silicate wall profiles",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Stelwerk metselwerk onder peil",
+      "englishTaskName": "Setting masonry profiles below ground level",
+      "milestoneClass": "Framing"
+    },
+    {
+      "dutchTaskName": "Stort",
+      "englishTaskName": "Concrete pour",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Stort liftvloer",
+      "englishTaskName": "Concrete pour elevator floor",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Stort liftwanden",
+      "englishTaskName": "Concrete pour elevator walls",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Wapening",
+      "englishTaskName": "Rebar / reinforcement placement",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Wapening liftvloer",
+      "englishTaskName": "Rebar placement elevator floor",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Wapening liftwanden",
+      "englishTaskName": "Rebar placement elevator walls",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Werkvloer liftput",
+      "englishTaskName": "Mud slab / blinding concrete elevator pit",
+      "milestoneClass": "Structure"
+    },
+    {
+      "dutchTaskName": "Zink goot",
+      "englishTaskName": "Zinc gutter installation",
+      "milestoneClass": "Envelope"
+    },
+    {
+      "dutchTaskName": "Zinken bekleding dakkapelen",
+      "englishTaskName": "Zinc cladding dormer roofs",
+      "milestoneClass": "Envelope"
+    }
+  ],
+  "_provenance": {
+    "projectId": "REAL",
+    "projectName": "REAL",
+    "overallTimeline": "DERIVED",
+    "zonesList": "DERIVED",
+    "milestoneVocabulary": "FORGED",
+    "milestoneMappingTable": "FORGED",
+    "note": "Milestone vocabulary buckets (Framing, MEP, Finishes, Structure, Envelope, Other) are an engineered classification system; mapping table pairs original Dutch event logs with English translations."
+  }
+}

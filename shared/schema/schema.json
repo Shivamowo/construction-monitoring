@@ -1,0 +1,553 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://construction-monitoring.local/shared/schema/schema.json",
+  "title": "ConstructionProgressMonitoring",
+  "description": "Single source of truth schema for dashboard and 3d-twin. Field descriptions tag provenance as REAL, DERIVED, or FORGED.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "bimComponents",
+    "plannedSchedule",
+    "asBuiltDeviations",
+    "siteEngineerPhotos",
+    "fusionOutputs",
+    "safetyDetections",
+    "projectMetadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Semver of this schema/data contract (e.g. 1.0.0)"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 datetime when this data.json bundle was generated"
+    },
+    "bimComponents": {
+      "type": "array",
+      "description": "Stream 1: BIM / Design Reference",
+      "items": { "$ref": "#/$defs/BimComponent" }
+    },
+    "plannedSchedule": {
+      "type": "array",
+      "description": "Stream 2: Planned Schedule",
+      "items": { "$ref": "#/$defs/PlannedTask" }
+    },
+    "asBuiltDeviations": {
+      "type": "array",
+      "description": "Stream 3: Deviation / As-Built",
+      "items": { "$ref": "#/$defs/AsBuiltDeviation" }
+    },
+    "siteEngineerPhotos": {
+      "type": "array",
+      "description": "Stream 4: Site Engineer Photos",
+      "items": { "$ref": "#/$defs/SiteEngineerPhoto" }
+    },
+    "fusionOutputs": {
+      "type": "array",
+      "description": "Stream 5: Fusion Layer Output",
+      "items": { "$ref": "#/$defs/FusionOutput" }
+    },
+    "safetyDetections": {
+      "type": "array",
+      "description": "Stream 6: Safety / PPE (entire stream is FORGED)",
+      "items": { "$ref": "#/$defs/SafetyDetection" }
+    },
+    "projectMetadata": {
+      "description": "Stream 7: Project Metadata",
+      "$ref": "#/$defs/ProjectMetadata"
+    },
+    "_provenance": {
+      "type": "object",
+      "description": "Dataset-wide provenance metadata tracking REAL, DERIVED, and FORGED fields"
+    }
+  },
+  "$defs": {
+    "IfcComponentType": {
+      "type": "string",
+      "description": "REAL — one of the 14 real IFC classes in Schependomlaan",
+      "enum": [
+        "Beam",
+        "Building Element Proxy",
+        "Column",
+        "Covering",
+        "Distribution Element",
+        "Door",
+        "Member",
+        "Pipe Segment",
+        "Railing",
+        "Roof",
+        "Slab",
+        "Stair",
+        "Wall",
+        "Window"
+      ]
+    },
+    "OnTimeStatus": {
+      "type": "string",
+      "description": "REAL — as-built on-time / too-late flag from event logs",
+      "enum": ["on_time", "too_late", "unknown"]
+    },
+    "DeviationFlag": {
+      "type": "string",
+      "description": "DERIVED — schedule position relative to plan",
+      "enum": ["ahead", "on_time", "behind", "not_scheduled"]
+    },
+    "PredictedMilestoneClass": {
+      "type": "string",
+      "description": "FINAL and LOCKED — six construction milestone buckets. milestoneVocabulary maps real Dutch TaskName values onto these buckets; do not extend this enum.",
+      "enum": ["Framing", "MEP", "Finishes", "Structure", "Envelope", "Other"]
+    },
+    "ReviewStatus": {
+      "type": "string",
+      "description": "FORGED — synthetic human/process review status",
+      "enum": ["pending", "approved", "rejected", "needs_review"]
+    },
+    "ViolationType": {
+      "type": "string",
+      "description": "FORGED — type of PPE / safety violation",
+      "enum": [
+        "no_hard_hat",
+        "no_safety_vest",
+        "no_harness",
+        "restricted_zone",
+        "other"
+      ]
+    },
+    "Severity": {
+      "type": "string",
+      "description": "FORGED — severity of the violation",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "ResolutionStatus": {
+      "type": "string",
+      "description": "FORGED — whether/how the finding was resolved",
+      "enum": ["open", "acknowledged", "resolved", "dismissed"]
+    },
+    "GeometryBounds": {
+      "type": "object",
+      "description": "REAL — spatial coordinates / bounding reference extracted from IFC",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": {
+          "type": "array",
+          "description": "REAL — min corner XYZ from IFC geometry",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        },
+        "max": {
+          "type": "array",
+          "description": "REAL — max corner XYZ from IFC geometry",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        },
+        "centroid": {
+          "type": "array",
+          "description": "REAL — optional centroid if available from IFC extraction",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "number" }
+        }
+      }
+    },
+    "BimComponent": {
+      "type": "object",
+      "description": "Stream 1: BIM / Design Reference",
+      "additionalProperties": false,
+      "required": [
+        "componentId",
+        "componentType",
+        "material",
+        "classificationCode",
+        "buildingId",
+        "geometry",
+        "floorZone"
+      ],
+      "properties": {
+        "componentId": {
+          "type": "string",
+          "description": "REAL — IFC component GUID"
+        },
+        "componentType": {
+          "$ref": "#/$defs/IfcComponentType",
+          "description": "REAL — one of the 14 real IFC classes in Schependomlaan"
+        },
+        "material": {
+          "type": ["string", "null"],
+          "description": "REAL — material name/string from IFC; null if absent"
+        },
+        "classificationCode": {
+          "type": ["string", "null"],
+          "description": "REAL — Nl-sfb classification code; null if absent"
+        },
+        "buildingId": {
+          "type": "string",
+          "description": "REAL — building identifier from the model"
+        },
+        "geometry": {
+          "$ref": "#/$defs/GeometryBounds",
+          "description": "REAL — spatial coordinates / bounding reference extracted from IFC"
+        },
+        "floorZone": {
+          "type": "string",
+          "description": "DERIVED — human-readable floor/zone label from IFC spatial hierarchy"
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    },
+    "PlannedTask": {
+      "type": "object",
+      "description": "Stream 2: Planned Schedule",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "taskName",
+        "taskNameEn",
+        "plannedStart",
+        "plannedEnd",
+        "componentId",
+        "weeklyIfcSnapshots"
+      ],
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "description": "REAL — task identifier from construction event logs"
+        },
+        "taskName": {
+          "type": "string",
+          "description": "REAL — task name (source data is in Dutch)"
+        },
+        "taskNameEn": {
+          "type": "string",
+          "description": "DERIVED — English translation alongside original Dutch taskName"
+        },
+        "plannedStart": {
+          "type": "string",
+          "format": "date",
+          "description": "REAL — planned start date (ISO 8601 date)"
+        },
+        "plannedEnd": {
+          "type": "string",
+          "format": "date",
+          "description": "REAL — planned end date (ISO 8601 date)"
+        },
+        "componentId": {
+          "type": "string",
+          "description": "REAL — foreign key to Stream 1 componentId"
+        },
+        "weeklyIfcSnapshots": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "REAL — weekly IFC snapshot filenames associated with this task's timeline"
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    },
+    "AsBuiltDeviation": {
+      "type": "object",
+      "description": "Stream 3: Deviation / As-Built",
+      "additionalProperties": false,
+      "required": [
+        "componentId",
+        "onTimeStatus",
+        "deviationDays",
+        "deviationDaysSource",
+        "volumetricDeviationPct",
+        "pointCloudRef",
+        "pointCloudConfidence",
+        "heatmapGrid"
+      ],
+      "properties": {
+        "componentId": {
+          "type": "string",
+          "description": "REAL — foreign key to Stream 1 componentId"
+        },
+        "onTimeStatus": {
+          "$ref": "#/$defs/OnTimeStatus",
+          "description": "REAL — as-built on-time / too-late flag from event logs"
+        },
+        "deviationDays": {
+          "type": ["number", "null"],
+          "description": "DERIVED — if computable from planned vs actual dates in source logs; FORGED — if dates are insufficient and the value is synthesized in Phase 2. Nullable when unknown."
+        },
+        "deviationDaysSource": {
+          "type": "string",
+          "enum": ["derived", "forged"],
+          "description": "Which path produced deviationDays for this record"
+        },
+        "volumetricDeviationPct": {
+          "type": "number",
+          "description": "FORGED — comparison_all_weeks.xlsx lists missing elements per week (Name/GUID/GlobalID columns) and does NOT provide per-component volumetric deviation percentages; values are synthesized in Phase 2"
+        },
+        "pointCloudRef": {
+          "type": "string",
+          "description": "REAL — path/reference to the associated point-cloud file"
+        },
+        "pointCloudConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FORGED — synthetic confidence score for the point-cloud match (0–1)"
+        },
+        "heatmapGrid": {
+          "type": "array",
+          "description": "FORGED — 2D grid of deviation values per zone (synthetic heatmap)",
+          "items": {
+            "type": "array",
+            "items": { "type": "number" }
+          }
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    },
+    "SiteEngineerPhoto": {
+      "type": "object",
+      "description": "Stream 4: Site Engineer Photos",
+      "additionalProperties": false,
+      "required": [
+        "photoId",
+        "timestamp",
+        "componentId",
+        "predictedMilestoneClass",
+        "confidenceScore",
+        "humanCorrected",
+        "imageRef"
+      ],
+      "properties": {
+        "photoId": {
+          "type": "string",
+          "description": "FORGED — synthetic photo id; underlying image may be an unrelated real CC-licensed photo reused in Phase 2"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "FORGED — synthetic capture timestamp (ISO 8601 datetime)"
+        },
+        "componentId": {
+          "type": "string",
+          "description": "FORGED — synthetic link to Stream 1 componentId"
+        },
+        "predictedMilestoneClass": {
+          "$ref": "#/$defs/PredictedMilestoneClass",
+          "description": "FORGED — predicted construction milestone class"
+        },
+        "confidenceScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FORGED — model confidence for the predicted class (0–1)"
+        },
+        "humanCorrected": {
+          "type": "boolean",
+          "description": "FORGED — whether a human corrected the automatic label"
+        },
+        "imageRef": {
+          "type": "string",
+          "description": "REAL — the image file itself may be a real CC-licensed asset; FORGED — its label/tagging and component association are synthetic"
+        },
+        "droneFootageRef": {
+          "type": "string",
+          "description": "REAL — external link to original drone footage repository"
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    },
+    "FusionOutput": {
+      "type": "object",
+      "description": "Stream 5: Fusion Layer Output",
+      "additionalProperties": false,
+      "required": [
+        "componentId",
+        "completionPct",
+        "confidenceWeightedScore",
+        "deviationFlag",
+        "lastUpdated",
+        "reviewStatus"
+      ],
+      "properties": {
+        "componentId": {
+          "type": "string",
+          "description": "REAL — foreign key to Stream 1 componentId"
+        },
+        "completionPct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "DERIVED — aggregated completion % from Stream 2 task history (0–100)"
+        },
+        "confidenceWeightedScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FORGED — synthetic confidence-weighted fusion score (0–1)"
+        },
+        "deviationFlag": {
+          "$ref": "#/$defs/DeviationFlag",
+          "description": "DERIVED — schedule position relative to plan"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "FORGED — synthetic last-updated timestamp (ISO 8601 datetime)"
+        },
+        "reviewStatus": {
+          "$ref": "#/$defs/ReviewStatus",
+          "description": "FORGED — synthetic human/process review status"
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    },
+    "SafetyDetection": {
+      "type": "object",
+      "description": "Stream 6: Safety / PPE — entire stream is 100% FORGED (no real basis)",
+      "additionalProperties": false,
+      "required": [
+        "detectionId",
+        "timestamp",
+        "zone",
+        "violationType",
+        "severity",
+        "confidenceScore",
+        "resolutionStatus"
+      ],
+      "properties": {
+        "detectionId": {
+          "type": "string",
+          "description": "FORGED — synthetic detection id (no real basis)"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "FORGED — synthetic detection timestamp (ISO 8601 datetime)"
+        },
+        "zone": {
+          "type": "string",
+          "description": "FORGED — synthetic site zone label"
+        },
+        "componentId": {
+          "type": "string",
+          "description": "FORGED / DERIVED — foreign key to Stream 1 componentId where safety event was observed"
+        },
+        "violationType": {
+          "$ref": "#/$defs/ViolationType",
+          "description": "FORGED — type of PPE / safety violation"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "description": "FORGED — severity of the violation"
+        },
+        "confidenceScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "FORGED — detector confidence (0–1)"
+        },
+        "resolutionStatus": {
+          "$ref": "#/$defs/ResolutionStatus",
+          "description": "FORGED — whether/how the finding was resolved"
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    },
+    "OverallTimeline": {
+      "type": "object",
+      "description": "DERIVED — project timeline from Stream 2 date extents",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date",
+          "description": "DERIVED — earliest plannedStart across Stream 2"
+        },
+        "end": {
+          "type": "string",
+          "format": "date",
+          "description": "DERIVED — latest plannedEnd across Stream 2"
+        }
+      }
+    },
+    "ProjectMetadata": {
+      "type": "object",
+      "description": "Stream 7: Project Metadata",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "projectName",
+        "overallTimeline",
+        "zonesList",
+        "milestoneVocabulary",
+        "milestoneMappingTable"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "REAL — project identifier"
+        },
+        "projectName": {
+          "type": "string",
+          "description": "REAL — project display name"
+        },
+        "overallTimeline": {
+          "$ref": "#/$defs/OverallTimeline",
+          "description": "DERIVED — min/max of Stream 2 planned dates"
+        },
+        "zonesList": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "DERIVED — distinct zone labels from IFC spatial hierarchy"
+        },
+        "milestoneVocabulary": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["Framing", "MEP", "Finishes", "Structure", "Envelope", "Other"]
+          },
+          "description": "DERIVED mapping — maps real Dutch TaskName values from the schedule logs onto the six locked PredictedMilestoneClass buckets (Framing, MEP, Finishes, Structure, Envelope, Other). The vocabulary buckets are FINAL and LOCKED; this object is not an open/TBD enum."
+        },
+        "milestoneMappingTable": {
+          "type": "array",
+          "description": "Auditable mapping table pairing Dutch task names, English translations, and locked milestone buckets",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dutchTaskName", "englishTaskName", "milestoneClass"],
+            "properties": {
+              "dutchTaskName": { "type": "string" },
+              "englishTaskName": { "type": "string" },
+              "milestoneClass": { "$ref": "#/$defs/PredictedMilestoneClass" }
+            }
+          }
+        },
+        "_provenance": {
+          "type": "object",
+          "description": "Field-level provenance classification"
+        }
+      }
+    }
+  }
+}

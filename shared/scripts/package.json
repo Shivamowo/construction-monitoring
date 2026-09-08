@@ -1,0 +1,26 @@
+{
+  "name": "construction-monitoring-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phase 2 data generation for construction progress monitoring (Node/TypeScript only)",
+  "scripts": {
+    "generate": "tsx generate-all.ts",
+    "validate": "tsx validate-data.ts",
+    "inspect-xlsx": "tsx inspect-xlsx.ts",
+    "parse-ifc": "tsx parse-ifc.ts",
+    "parse-schedule": "tsx parse-schedule.ts",
+    "downsample": "tsx downsample-pointclouds.ts"
+  },
+  "dependencies": {
+    "@types/node": "^26.5.0",
+    "@types/papaparse": "^5.5.2",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "csv-parse": "^7.0.2",
+    "papaparse": "^5.7.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "web-ifc": "^0.0.77",
+    "xlsx": "^0.18.5"
+  }
+}
