@@ -57,6 +57,7 @@ export function ScheduleNavigator3D() {
   const [selected, setSelected] = useState<NavigatorWaypoint | null>(null);
   const [clusterItems, setClusterItems] = useState<NavigatorWaypoint[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [takenRoutes, setTakenRoutes] = useState<Set<string>>(new Set());
   const [shardTotal, setShardTotal] = useState(0);
   const [clusterTotal, setClusterTotal] = useState(0);
   const [status, setStatus] = useState("Loading schedule…");
@@ -229,6 +230,27 @@ export function ScheduleNavigator3D() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [selected]);
+  // Reroute preview: show the dashed alternate path while a delay shard with
+  // an un-taken catch-up plan is selected; hide it the moment the card is
+  // closed or a route is committed. Nothing is drawn unless previewed here.
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    const canPreview = Boolean(
+      selected?.catchUpPlan &&
+        selected.catchUpPlan.daysRecovered > 0 &&
+        !takenRoutes.has(selected.id)
+    );
+    if (selected && canPreview) {
+      controller.previewCatchUpPlan(selected.id);
+    } else {
+      controller.clearCatchUpPreview();
+    }
+    return () => {
+      controller.clearCatchUpPreview();
+    };
+  }, [selected, takenRoutes]);
+
   useEffect(() => {
     if (!scrubBodyRef.current || !scrubIso) return;
     gsap.fromTo(
@@ -304,14 +326,19 @@ export function ScheduleNavigator3D() {
     controllerRef.current?.setScrubbing(false);
   };
 
-  const onApplyCatchUp = () => {
+  const onTakeRoute = () => {
     if (!selected?.catchUpPlan) return;
     setRecoveryOpen(true);
     const { daysRecovered, daysLost } = selected.catchUpPlan;
     setStatus(
-      `Recovering ${daysRecovered} of ${daysLost} days at ${selected.taskNameEn}…`
+      `Route taken: recovering ${daysRecovered} of ${daysLost} days at ${selected.taskNameEn}…`
     );
     controllerRef.current?.applyCatchUpPlan(selected.id);
+    setTakenRoutes((prev) => {
+      const next = new Set(prev);
+      next.add(selected.id);
+      return next;
+    });
   };
 
   if (error) {
@@ -346,6 +373,7 @@ export function ScheduleNavigator3D() {
   const hasCatchUp = Boolean(
     selected?.catchUpPlan && selected.catchUpPlan.daysRecovered > 0
   );
+  const routeTaken = Boolean(selected && takenRoutes.has(selected.id));
   const effectiveDaysBehind = activeDaysBehind ?? summary.daysBehind;
 
   const currentScrubFraction = scrubIsoToFraction(
@@ -543,6 +571,25 @@ export function ScheduleNavigator3D() {
             aria-hidden
           />
 
+          <div className={styles.zoomControls} role="group" aria-label="Camera zoom">
+            <button
+              type="button"
+              className={styles.zoomBtn}
+              aria-label="Zoom in"
+              onClick={() => controllerRef.current?.zoomIn()}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className={styles.zoomBtn}
+              aria-label="Zoom out"
+              onClick={() => controllerRef.current?.zoomOut()}
+            >
+              −
+            </button>
+          </div>
+
           {booting && (
             <div className={styles.bootOverlay} aria-busy="true">
               <p className={styles.preloaderBrand}>Schedule Navigator</p>
@@ -647,42 +694,51 @@ export function ScheduleNavigator3D() {
                 </p>
               </div>
 
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.primaryBtn}
-                  onClick={onApplyCatchUp}
-                  disabled={!hasCatchUp}
-                  title={
-                    hasCatchUp
-                      ? undefined
-                      : "No catch-up plan on this delay (full residual stays on the cascade)"
-                  }
-                >
-                  {hasCatchUp
-                    ? `Apply catch-up (−${selected!.catchUpPlan!.daysRecovered}d)`
-                    : "No catch-up plan"}
-                </button>
-              </div>
+              {hasCatchUp && selected.catchUpPlan && (
+                <>
+                  <div className={styles.field}>
+                    <p className={styles.fieldLabel}>
+                      Route cost
+                      <ProvenanceBadge tag="FORGED" compact />
+                    </p>
+                    <p className={styles.fieldBody}>
+                      {selected.catchUpPlan.resourceCost}
+                    </p>
+                  </div>
 
-              {recoveryOpen && selected.catchUpPlan && (
-                <div className={styles.recovery}>
-                  <p className={styles.fieldLabel}>
-                    Recovery
-                    <ProvenanceBadge tag="FORGED" compact />
-                  </p>
-                  <p>{selected.catchUpPlan.summary}</p>
-                  <p className={styles.placeholderNote}>
-                    Partial correction only: {selected.catchUpPlan.daysRecovered} of{" "}
-                    {selected.catchUpPlan.daysLost} days recovered (
-                    {Math.round(
-                      (selected.catchUpPlan.daysRecovered /
-                        Math.max(selected.catchUpPlan.daysLost, 1)) *
-                        100
-                    )}
-                    % of this local gap). Other delays keep their own residual.
-                  </p>
-                </div>
+                  <div className={styles.actions}>
+                    <button
+                      type="button"
+                      className={styles.primaryBtn}
+                      onClick={onTakeRoute}
+                      disabled={routeTaken}
+                    >
+                      {routeTaken
+                        ? "Route taken ✓"
+                        : `Take this route (−${selected.catchUpPlan.daysRecovered}d)`}
+                    </button>
+                  </div>
+
+                  {recoveryOpen && (
+                    <div className={styles.recovery}>
+                      <p className={styles.fieldLabel}>
+                        Recovery
+                        <ProvenanceBadge tag="FORGED" compact />
+                      </p>
+                      <p>{selected.catchUpPlan.summary}</p>
+                      <p className={styles.placeholderNote}>
+                        Partial correction only: {selected.catchUpPlan.daysRecovered} of{" "}
+                        {selected.catchUpPlan.daysLost} days recovered (
+                        {Math.round(
+                          (selected.catchUpPlan.daysRecovered /
+                            Math.max(selected.catchUpPlan.daysLost, 1)) *
+                            100
+                        )}
+                        % of this local gap). Other delays keep their own residual.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </aside>
           )}

@@ -7,6 +7,8 @@ import type {
 import {
   buildTimelineScale,
   dateToX,
+  PCT_AXIS_X,
+  pctToY,
   type TimelineScale,
 } from "./timelineAxis";
 
@@ -15,6 +17,14 @@ export interface DelayShardSpec {
   waypoint: NavigatorWaypoint;
   waypointIndex: number;
   curveT: number;
+  position: THREE.Vector3;
+  tangent: THREE.Vector3;
+}
+
+/** A future waypoint with a predicted delay risk on the projected line. */
+export interface ForecastShardSpec {
+  waypoint: NavigatorWaypoint;
+  waypointIndex: number;
   position: THREE.Vector3;
   tangent: THREE.Vector3;
 }
@@ -41,6 +51,8 @@ export interface NavigatorPathModel {
   projectedControlPointsRest: THREE.Vector3[];
   shards: DelayShardSpec[];
   clusters: ShardCluster[];
+  /** Predicted-risk markers on the projected (future) line. */
+  forecastShards: ForecastShardSpec[];
   /** Last waypoint fully behind asOf (for HUD); today may sit between waypoints. */
   todayWaypointIndex: number;
   /** Calendar today from timeline.asOf. */
@@ -74,6 +86,80 @@ function addDays(iso: string, days: number): string {
 
 export function isDelayWaypoint(waypoint: NavigatorWaypoint): boolean {
   return waypoint.localDelayDays > 0;
+}
+
+/** Future waypoint carrying a predicted (not-yet-happened) delay risk. */
+export function isForecastWaypoint(
+  waypoint: NavigatorWaypoint,
+  asOfMs: number
+): boolean {
+  return Boolean(waypoint.forecastRisk) && parseTime(waypoint.plannedStart) > asOfMs;
+}
+
+/**
+ * Build predicted-risk shard markers on the projected line — the future
+ * counterpart to actual-path delay shards. Positions snap to the nearest
+ * point on the projected curve (mirrors the actual-curve snap for past
+ * shards) so markers sit exactly on the rendered tube.
+ */
+export function buildForecastShards(
+  waypoints: NavigatorWaypoint[],
+  fullJourneyPoints: THREE.Vector3[],
+  projectedCurve: THREE.CatmullRomCurve3,
+  asOfMs: number
+): ForecastShardSpec[] {
+  const shards: ForecastShardSpec[] = [];
+  waypoints.forEach((waypoint, waypointIndex) => {
+    if (!isForecastWaypoint(waypoint, asOfMs)) return;
+
+    const ptIndex = waypointIndex + 1;
+    const raw = fullJourneyPoints[ptIndex];
+    if (!raw) return;
+
+    let bestT = 0;
+    let bestD = Infinity;
+    for (let s = 0; s <= 48; s++) {
+      const t = s / 48;
+      const d = projectedCurve.getPoint(t).distanceToSquared(raw);
+      if (d < bestD) {
+        bestD = d;
+        bestT = t;
+      }
+    }
+    const position = projectedCurve.getPoint(bestT);
+    const tangent = projectedCurve.getTangent(bestT).normalize();
+    shards.push({ waypoint, waypointIndex, position, tangent });
+  });
+  return shards;
+}
+
+/**
+ * Cumulative % of total project work planned complete by this waypoint
+ * (weighted by componentCount share). Falls back to an even index-based
+ * split when the source data has no weighted figure yet (pre-schema real
+ * pipeline path).
+ */
+function plannedPct(
+  waypoint: NavigatorWaypoint,
+  index: number,
+  total: number
+): number {
+  return waypoint.cumulativePlannedPct ?? ((index + 1) / total) * 100;
+}
+
+/**
+ * Cumulative % of total project work actually complete at this waypoint —
+ * the real value while work is in progress or done, the planned figure
+ * once it lands (same total weight, just later), for forecasting forward.
+ */
+function progressPct(
+  waypoint: NavigatorWaypoint,
+  index: number,
+  total: number
+): number {
+  return (
+    waypoint.cumulativeActualPct ?? plannedPct(waypoint, index, total)
+  );
 }
 
 /**
@@ -179,12 +265,12 @@ export function buildJourneyPoints(
   cascaded: ReturnType<typeof computeCascadedSchedule>,
   scale: TimelineScale
 ): THREE.Vector3[] {
+  const total = waypoints.length;
   return waypoints.map((w, i) => {
     const lateral = Math.sin(i * 0.72) * LATERAL;
     const c = cascaded[i];
     const x = dateToX(c.projectedEnd, scale);
-    const height =
-      0.22 + c.cascadeBefore * 0.035 + c.residualLocal * 0.07;
+    const height = pctToY(progressPct(w, i, total));
     return new THREE.Vector3(x, height, lateral);
   });
 }
@@ -282,6 +368,26 @@ export function buildCatchUpProjectedControls(
   return controls;
 }
 
+/**
+ * Build a visually distinct alternate-route preview: branches from the delay
+ * shard's own position, bulges laterally so it reads alongside the current
+ * projected path rather than overlapping it, and converges back to the
+ * recovered target points by the end (Google-Maps-style reroute preview).
+ */
+export function buildRoutePreviewPoints(
+  shardPosition: THREE.Vector3,
+  targets: THREE.Vector3[]
+): THREE.Vector3[] {
+  const pts = [shardPosition.clone(), ...targets.map((p) => p.clone())];
+  const n = pts.length;
+  const maxOffset = 0.55;
+  return pts.map((p, i) => {
+    const t = n > 1 ? i / (n - 1) : 0;
+    const bulge = Math.sin(Math.PI * t) * maxOffset;
+    return new THREE.Vector3(p.x, p.y, p.z + bulge);
+  });
+}
+
 /** Days to apply from a waypoint's catch-up plan (0 if none / invalid). */
 export function recoveryDaysForWaypoint(
   waypoint: NavigatorWaypoint | undefined
@@ -320,7 +426,7 @@ export function buildNavigatorPathModel(
     new THREE.Vector3(0, 0, 0),
     new THREE.Vector3(1, 0, 0),
   ]);
-  const emptyToday = new THREE.Vector3(0, 0.3, 0);
+  const emptyToday = new THREE.Vector3(0, pctToY(0), 0);
 
   if (!timeline.asOf) {
     throw new Error(
@@ -349,6 +455,7 @@ export function buildNavigatorPathModel(
       projectedControlPointsRest: [],
       shards: [],
       clusters: [],
+      forecastShards: [],
       todayWaypointIndex: 0,
       todayIso,
       todayPosition: emptyToday,
@@ -380,7 +487,7 @@ export function buildNavigatorPathModel(
 
   const plannedStartPt = new THREE.Vector3(
     dateToX(timeline.start, timelineScale),
-    0.12,
+    pctToY(0),
     0
   );
   const plannedPoints = [
@@ -389,7 +496,7 @@ export function buildNavigatorPathModel(
       const lateral = Math.sin(i * 0.72) * LATERAL;
       return new THREE.Vector3(
         dateToX(w.plannedEnd, timelineScale),
-        0.12,
+        pctToY(plannedPct(w, i, waypoints.length)),
         lateral * 0.28
       );
     }),
@@ -399,7 +506,7 @@ export function buildNavigatorPathModel(
   // the glossy tube's first vertex lines up with the "START" label / axis rail
   // (both at x = dateToX(start) = 0), not with the first waypoint's end date.
   const fullJourneyPoints = [
-    new THREE.Vector3(dateToX(timeline.start, timelineScale), 0.22, 0),
+    new THREE.Vector3(dateToX(timeline.start, timelineScale), pctToY(0), 0),
     ...buildJourneyPoints(waypoints, cascaded, timelineScale),
   ];
   const todaySample = sampleJourneyAtDate(
@@ -497,12 +604,22 @@ export function buildNavigatorPathModel(
   });
 
   const clusters = clusterDelayShards(shards);
+  const forecastShards = buildForecastShards(
+    waypoints,
+    fullJourneyPoints,
+    projectedCurve,
+    asOfMs
+  );
   const bounds = new THREE.Box3().setFromPoints([
     ...plannedPoints,
     ...fullJourneyPoints,
     todaySample.position,
     new THREE.Vector3(0, timelineScale.axisY, timelineScale.axisZ),
     new THREE.Vector3(X_SPAN, timelineScale.axisY, timelineScale.axisZ),
+    // % axis rail sits left of timeline start — include so the camera frames it in.
+    new THREE.Vector3(PCT_AXIS_X, pctToY(0), timelineScale.axisZ),
+    new THREE.Vector3(PCT_AXIS_X, pctToY(100), timelineScale.axisZ),
+    ...forecastShards.map((f) => f.position),
   ]);
 
   return {
@@ -516,6 +633,7 @@ export function buildNavigatorPathModel(
     projectedControlPointsRest,
     shards,
     clusters,
+    forecastShards,
     todayWaypointIndex,
     todayIso,
     todayPosition: todaySample.position.clone(),

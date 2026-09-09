@@ -31,7 +31,9 @@
         "delayedComponents": 0
       },
       "deviationDaysSource": "forged",
-      "severity": "none"
+      "severity": "none",
+      "cumulativePlannedPct": 4.7,
+      "cumulativeActualPct": 4.7
     },
     {
       "id": "foundations",
@@ -49,7 +51,8 @@
       "catchUpPlan": {
         "daysLost": 9,
         "daysRecovered": 6,
-        "summary": "Weekend overtime pours and accelerated rebar set recover 6 of 9 days; 3 days remain on the cascade."
+        "summary": "Weekend overtime pours and accelerated rebar set recover 6 of 9 days; 3 days remain on the cascade.",
+        "resourceCost": "+2 concrete crews, 3 weekends of overtime"
       },
       "counts": {
         "onTime": 16,
@@ -59,7 +62,9 @@
         "delayedComponents": 10
       },
       "deviationDaysSource": "forged",
-      "severity": "mild"
+      "severity": "mild",
+      "cumulativePlannedPct": 15.5,
+      "cumulativeActualPct": 15.5
     },
     {
       "id": "ground-floor-slab",
@@ -81,7 +86,9 @@
         "delayedComponents": 0
       },
       "deviationDaysSource": "forged",
-      "severity": "none"
+      "severity": "none",
+      "cumulativePlannedPct": 21.7,
+      "cumulativeActualPct": 21.7
     },
     {
       "id": "structural-frame",
@@ -104,7 +111,9 @@
         "delayedComponents": 26
       },
       "deviationDaysSource": "forged",
-      "severity": "severe"
+      "severity": "severe",
+      "cumulativePlannedPct": 38.0,
+      "cumulativeActualPct": 38.0
     },
     {
       "id": "envelope-shell",
@@ -122,7 +131,8 @@
       "catchUpPlan": {
         "daysLost": 7,
         "daysRecovered": 4,
-        "summary": "Parallel trades on cleared elevations while remediation runs recover 4 of 7 days; 3 days remain."
+        "summary": "Parallel trades on cleared elevations while remediation runs recover 4 of 7 days; 3 days remain.",
+        "resourceCost": "+1 parallel trade crew on cleared elevations, no float"
       },
       "counts": {
         "onTime": 14,
@@ -132,7 +142,9 @@
         "delayedComponents": 17
       },
       "deviationDaysSource": "forged",
-      "severity": "mild"
+      "severity": "mild",
+      "cumulativePlannedPct": 51.6,
+      "cumulativeActualPct": 45.0
     },
     {
       "id": "mep-rough-in",
@@ -154,7 +166,8 @@
         "delayedComponents": 0
       },
       "deviationDaysSource": "forged",
-      "severity": "none"
+      "severity": "none",
+      "cumulativePlannedPct": 70.2
     },
     {
       "id": "interior-finishes",
@@ -176,7 +189,19 @@
         "delayedComponents": 0
       },
       "deviationDaysSource": "forged",
-      "severity": "none"
+      "severity": "none",
+      "cumulativePlannedPct": 91.5,
+      "forecastRisk": {
+        "predictedDelayDays": 8,
+        "riskLevel": "elevated",
+        "reason": "Imported joinery package routes through the same Rotterdam customs lane that held the structural steel package in April; no hold yet, but lead-time risk is flagged for this shipment."
+      },
+      "catchUpPlan": {
+        "daysLost": 8,
+        "daysRecovered": 3,
+        "summary": "Pre-clearing paperwork now and holding a backup domestic joinery supplier recovers 3 of 8 days if the hold occurs.",
+        "resourceCost": "+expedited customs broker, backup domestic joinery supplier on standby"
+      }
     },
     {
       "id": "roof-completion",
@@ -198,7 +223,13 @@
         "delayedComponents": 0
       },
       "deviationDaysSource": "forged",
-      "severity": "none"
+      "severity": "none",
+      "cumulativePlannedPct": 96.9,
+      "forecastRisk": {
+        "predictedDelayDays": 5,
+        "riskLevel": "watch",
+        "reason": "Historical autumn rainfall pattern in this region has delayed roof dry-in during the Aug–Sep window on comparable builds; not yet a confirmed hold."
+      }
     },
     {
       "id": "handover",
@@ -220,7 +251,8 @@
         "delayedComponents": 0
       },
       "deviationDaysSource": "forged",
-      "severity": "none"
+      "severity": "none",
+      "cumulativePlannedPct": 100.0
     }
   ],
   "notScheduled": {
@@ -237,6 +269,8 @@
     "Cascade is illustrative and not dependency-graph-aware. Cumulative +30d at-risk = foundations 9 + steel customs 14 + envelope inspection 7.",
     "Catch-up plans are partial: foundations recover 6/9; envelope recover 4/7; steel customs has no recovery — projected finish stays after planned end.",
     "timeline.asOf (2015-07-10) drives the actual-vs-projected split — not a waypoint-fraction placeholder.",
-    "Swap USE_DUMMY_DATA=false in dashboard/.env.local to load the real aggregated pipeline outputs again."
+    "cumulativePlannedPct is the cumulative share of total project work (weighted by componentCount, 258 total) each waypoint represents by its plannedEnd — the real Y axis for planned/projected S-curve height, not a stylized spacing value. cumulativeActualPct mirrors it for completed waypoints and gives envelope-shell (in progress at asOf) a partial value: 38.0% (prior cumulative) + 18/35 components already on-time/ahead within that task's own 13.6% weight = 45.0%.",
+    "Swap USE_DUMMY_DATA=false in dashboard/.env.local to load the real aggregated pipeline outputs again.",
+    "forecastRisk (interior-finishes, roof-completion) is a predicted risk on the projected line, not a delay that has happened — distinct from localDelayDays. Interior-finishes' risk echoes the same customs lane that already held the steel package; roof-completion's risk is a seasonal weather pattern, not a confirmed hold."
   ]
 }

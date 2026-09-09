@@ -50,6 +50,59 @@ Last updated: 2026-09-09
 
 ## Task history
 
+### 2026-09-09 — Real Y-axis (cumulative % complete) — fix flat planned/actual lines
+
+**Diagnosis (before any change):**
+- `pathFromWaypoints.ts` `buildJourneyPoints()` computed each waypoint's world Y as
+  `0.22 + cascadeBefore*0.035 + residualLocal*0.07` — a function of *delay magnitude*, not
+  progress. Waypoints with no local delay (most of them) all landed at the same height, so the
+  actual/projected line was flat except for small bumps at the 3 delay waypoints.
+- `plannedPoints` (the planned reference line) used a **hard-coded flat Y = 0.12** for every
+  waypoint — it was never data-driven at all, just a spacing constant.
+- Dummy dataset had no completion-% field of any kind; `fusion.json` real-data path has
+  `completionPct` (DERIVED) per component, confirmed present and averageable per waypoint group
+  for a future real wiring, but intentionally left unwired this pass (`USE_DUMMY_DATA=true`).
+
+**Fix:**
+- Added `cumulativePlannedPct` (always) and `cumulativeActualPct` (only while a waypoint is
+  finished-or-in-progress as of `timeline.asOf`) to `NavigatorWaypoint`
+  (`aggregate.ts`) and to the 9 dummy waypoints (`schedule-navigator-dummy.json`), weighted by
+  each waypoint's `componentCount` share of the project total (258 components) — a real,
+  non-arbitrary S-curve: 4.7 / 15.5 / 21.7 / 38.0 / 51.6 / 70.2 / 91.5 / 96.9 / 100.0.
+  `envelope-shell` (in progress at asOf) gets a genuine partial actual value (45.0%) derived
+  from its own onTime+ahead component count (18/35) blended into the prior cumulative — not a
+  guess.
+- Added `pctToY()` / `PCT_AXIS_Y_BASE` / `PCT_AXIS_Y_SPAN` (0-100% → world Y 0.15-4.15) and a
+  vertical % axis (rail + 0/25/50/75/100 ticks + DOM pill labels, same chip styling as the
+  X-axis date chips) in `timelineAxis.ts`; mounted in `journeyController.ts`.
+- `buildJourneyPoints()` / planned-point construction in `pathFromWaypoints.ts` now derive Y
+  from `pctToY(cumulativeActualPct ?? cumulativePlannedPct ?? index-fallback)` — future
+  waypoints (after today) plot at their full planned-% weight at their (possibly cascaded)
+  date, so the projected line continues the actual line's real value smoothly toward 100%.
+- Fixed a **DOM-mount ordering bug** hit during verification: `mountAxisLabelElements`
+  (X-axis) calls `container.replaceChildren()`, which was wiping out the % labels mounted
+  before it — moved the % label mount to after the X-axis mount.
+- Fixed a **visibility bug**: the % axis rail was originally placed at world x=-3 (left of
+  timeline start), which the existing cinematic camera framing crops out entirely (confirmed
+  "Start" label is *already* off-screen there pre-existing, out of scope to fix generally).
+  Moved the rail to x=10 (still left of all real path progress, inside the visible frustum) and
+  added its extreme points to `model.bounds` so the camera includes it.
+- Catch-up/shard mechanics: unaffected in logic — `computeCascadedSchedule` still drives X
+  only; shard positions still sample the rebuilt curves, so shard click/detail-card interaction
+  was re-verified in a live headless Chrome session (clicked the "Structural frame" delay
+  shard, card opened correctly, 0 console errors) after the Y change.
+
+**Verification:**
+- `tsc --noEmit`: clean.
+- Headless Chrome (puppeteer-core against local `chrome.exe`, not installed as a project dep):
+  screenshot confirms a real rising S-curve for planned (navy), actual-to-date (teal, rising to
+  the "Today" marker), and projected (coral, continuing the rise to "Planned end"/"Projected
+  end") — no flat segments except where genuinely no work is scheduled. % axis rail + 0/25/50/
+  75/100% pill labels render on-screen. 0 console errors.
+- Also discovered `dashboard/.env.local` (which sets `USE_DUMMY_DATA=true`) does not exist in
+  this checkout (it's gitignored and wasn't carried over) — recreated it so the dummy scenario
+  loads by default, matching the documented behavior above.
+
 ### 2026-09-09 — Label collision, halo artifacts, professional typography (4 items)
 
 1. **Label collision (Planned End / Projected End overlap).** `syncProjectedLabels` (timelineAxis.ts) now runs general collision avoidance: key labels are measured by `offsetWidth` and greedily assigned to non-overlapping vertical rows; a colliding label is lifted `translateY(-row * (height+8)px)`. Optioned Year-end names / Projected End stack instead of overlapping at any zoom/camera. Month labels (already sparse / axis-anchored) are excluded.
@@ -197,14 +250,14 @@ Last updated: 2026-09-09
 - [ ] Decide formal schema promotion for delay **reason** + **catchUpPlan** (already on dummy + aggregate types)
 - [ ] Add real project **% complete** when pipeline exposes it
 - [ ] Optional: surface delay reason snippet in status bar without click
-- [ ] Replace 2D Navigator on `/` with 3D once approved
+- [x] Replace 2D Navigator on `/` with 3D once approved
 - [ ] Dashboard Stage 3 — 6 minor views
 - [x] Complete visual polish pass: Option A dark chrome refinement, 8px spacing scale (--space-1..6), consistent GSAP easing
 - [x] Path geometry & material refinement: Bloomberg terminal aesthetic, thin glassy lines, MeshPhysicalMaterial
 - [ ] Decide formal schema promotion for delay **reason** + **catchUpPlan** (already on dummy + aggregate types)
 - [ ] Add real project **% complete** when pipeline exposes it
 - [ ] Optional: surface delay reason snippet in status bar without click
-- [ ] Replace 2D Navigator on `/` with 3D once approved
+- [x] Replace 2D Navigator on `/` with 3D once approved
 - [ ] Dashboard Stage 3 — 6 minor views
 - [ ] Re-enable real data (`USE_DUMMY_DATA=false`) when pipeline work resumes
 - [ ] Optional: replace per-frame TubeGeometry rebuild on catch-up with cheaper morph

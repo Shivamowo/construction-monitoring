@@ -149,6 +149,97 @@ export function updateProjectedDashLine(
 }
 
 /**
+ * "Take this route" reroute preview — a sage dashed alternate path branching
+ * from a delay shard, previewing what the projected line would look like if
+ * the shard's catch-up plan were taken. Not committed until the user clicks
+ * the button; purely a preview overlay alongside the real projected tube.
+ */
+export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Line {
+  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const pts = curve.getPoints(64);
+  const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  const material = new THREE.LineDashedMaterial({
+    color: new THREE.Color("#5f7a4f"),
+    dashSize: 0.32,
+    gapSize: 0.22,
+    transparent: true,
+    opacity: 0.85,
+    linewidth: 1,
+  });
+  const line = new THREE.Line(geometry, material);
+  line.computeLineDistances();
+  line.name = "route-preview";
+  line.userData.kind = "route-preview";
+  line.position.y += 0.03;
+  return line;
+}
+
+/**
+ * "Suggested route" pill label that rides along the reroute preview so the
+ * dashed line reads as a suggestion even before the card is read — not
+ * something already taken.
+ */
+export function createRoutePreviewLabel(text: string): THREE.Sprite {
+  const w = 512;
+  const h = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  const mat = new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.7, 1.7 * (h / w), 1);
+  sprite.renderOrder = 10;
+  sprite.name = "route-preview-label";
+  if (!ctx) return sprite;
+
+  const label = text.toUpperCase();
+  ctx.font = "700 42px 'IBM Plex Sans', sans-serif";
+  const textWidth = ctx.measureText(label).width;
+  const boxW = Math.min(w - 8, textWidth + 96);
+  const boxH = 84;
+  const x0 = (w - boxW) / 2;
+  const y0 = (h - boxH) / 2;
+  const r = boxH / 2;
+
+  ctx.beginPath();
+  ctx.moveTo(x0 + r, y0);
+  ctx.arcTo(x0 + boxW, y0, x0 + boxW, y0 + boxH, r);
+  ctx.arcTo(x0 + boxW, y0 + boxH, x0, y0 + boxH, r);
+  ctx.arcTo(x0, y0 + boxH, x0, y0, r);
+  ctx.arcTo(x0, y0, x0 + boxW, y0, r);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(247, 243, 236, 0.96)";
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#5f7a4f";
+  ctx.stroke();
+
+  ctx.fillStyle = "#4a6440";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, w / 2, h / 2 + 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  mat.map = tex;
+  mat.needsUpdate = true;
+  return sprite;
+}
+
+export function updateRoutePreviewLine(
+  line: THREE.Line,
+  points: THREE.Vector3[]
+): void {
+  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const pts = curve.getPoints(64);
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  line.computeLineDistances();
+}
+
+/**
  * “Today” marker — deliberate engraved ink-stamp, not a plain slab:
  * a thin vertical needle + crossbar (no wide plate), a snug collar on the
  * path, and a layered floor stamp (soft ink wash + crisp ring + center dot).
@@ -230,6 +321,71 @@ export function createTodayMarker(
   group.userData.collarMat = ringMat;
   group.userData.dot = dot;
   group.userData.dotMat = dotMat;
+  return group;
+}
+
+/**
+ * Predicted-risk marker on the projected line — hollow/wireframe amber, the
+ * opposite treatment of the solid filled red crystal used for delays that
+ * have already happened, so "predicted" reads distinctly from "occurred" at
+ * a glance.
+ */
+export function createForecastShard(spec: {
+  id: string;
+  position: THREE.Vector3;
+  tangent: THREE.Vector3;
+}): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `forecast-${spec.id}`;
+  group.position.copy(spec.position);
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(up, spec.tangent);
+  group.quaternion.copy(quat);
+
+  const crystalGeo = new THREE.IcosahedronGeometry(0.24, 0);
+  crystalGeo.scale(0.75, 1.35, 0.75);
+
+  const crystalMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#c9843a"),
+    wireframe: true,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const crystal = new THREE.Mesh(crystalGeo, crystalMat);
+  crystal.userData.kind = "forecast-shard";
+  crystal.userData.forecastId = spec.id;
+  group.add(crystal);
+
+  // Wireframe-only geometry is thin and hard to click reliably — an
+  // invisible solid twin gives raycasting a real hit target.
+  const hit = new THREE.Mesh(
+    crystalGeo.clone(),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  hit.userData.kind = "forecast-shard";
+  hit.userData.forecastId = spec.id;
+  group.add(hit);
+
+  const ringGeo = new THREE.RingGeometry(0.28, 0.33, 48);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#c9843a"),
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  ring.name = "forecast-ring";
+  ring.visible = false;
+  group.add(ring);
+
+  group.userData.kind = "forecast-shard";
+  group.userData.crystal = crystal;
+  group.userData.crystalMat = crystalMat;
+  group.userData.ring = ring;
+  group.userData.ringMat = ringMat;
   return group;
 }
 

@@ -20,6 +20,17 @@ export interface CatchUpPlan {
   daysRecovered: number;
   /** Short human-readable description of the mitigation. */
   summary: string;
+  /** What taking this route actually costs (crew/schedule tradeoff). */
+  resourceCost: string;
+}
+
+/** Predicted delay risk on a future (not-yet-started/not-yet-due) waypoint. */
+export interface ForecastRisk {
+  /** Days that would be lost if this risk materializes. */
+  predictedDelayDays: number;
+  riskLevel: "watch" | "elevated";
+  /** Free-text forecast rationale — why this risk is flagged now. */
+  reason: string;
 }
 
 export interface NavigatorWaypoint {
@@ -53,6 +64,28 @@ export interface NavigatorWaypoint {
   delayReason?: string;
   /** Partial catch-up plan — present on some dummy delays; optional until schema lands. */
   catchUpPlan?: CatchUpPlan;
+  /**
+   * Cumulative % of total project work (weighted by componentCount) planned
+   * complete by this waypoint's plannedEnd. Drives the planned reference
+   * line's Y axis. Present on dummy scenario; real pipeline should derive it
+   * from cumulative componentCount share once schema lands.
+   */
+  cumulativePlannedPct?: number;
+  /**
+   * Cumulative % of total project work actually complete as of timeline.asOf,
+   * for waypoints finished or in progress by then (undefined once work has
+   * not started). Drives the actual-to-date line's Y axis. Present on dummy
+   * scenario; real pipeline should derive it from fusion.json completionPct
+   * once schema lands.
+   */
+  cumulativeActualPct?: number;
+  /**
+   * Predicted delay risk on the projected (forecast) line — distinct from
+   * localDelayDays, which only describes delay that has already happened.
+   * Present on 1-2 dummy future waypoints; optional until real pipeline
+   * exposes a risk model.
+   */
+  forecastRisk?: ForecastRisk;
 }
 
 export interface ScheduleNavigatorPayload {

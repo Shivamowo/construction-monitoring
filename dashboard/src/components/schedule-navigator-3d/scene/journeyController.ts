@@ -14,6 +14,7 @@ import {
   buildCatchUpProjectedControls,
   buildJourneyPoints,
   buildNavigatorPathModel,
+  buildRoutePreviewPoints,
   computeCascadedSchedule,
   rebuildProjectedCurve,
   recoveryDaysForWaypoint,
@@ -24,21 +25,30 @@ import {
 import {
   createActualTube,
   createClusterShard,
+  createForecastShard,
   createOrUpdateProjectedTube,
   createPlannedTube,
   createProjectedDashLine,
+  createRoutePreviewLabel,
+  createRoutePreviewLine,
   createTodayMarker,
   updateProjectedDashLine,
+  updateRoutePreviewLine,
 } from "./pathMeshes";
 import {
   buildAxisAnchors,
+  buildPctAxisAnchors,
   createAxisRail,
   createKeyTick,
+  createPctAxisRail,
   createPlayheadElement,
   dateToX,
   formatDay,
   monthlyTickMs,
   mountAxisLabelElements,
+  mountPctLabelElements,
+  pctToY,
+  syncPctLabels,
   syncPlayheadLabel,
   syncProjectedLabels,
   updateLabelWorldFromRoot,
@@ -79,6 +89,8 @@ export interface ClusterSelectPayload {
 
 export interface JourneyCallbacks {
   onClusterSelect: (payload: ClusterSelectPayload) => void;
+  /** Fired when a predicted-risk (forecast) shard on the projected line is clicked. */
+  onForecastSelect?: (waypoint: NavigatorWaypoint) => void;
   onSceneReady?: () => void;
   onCatchUpComplete?: (payload: {
     waypointId: string;
@@ -111,9 +123,16 @@ export interface JourneyControllerOptions {
 export interface JourneyController {
   setSize: (width: number, height: number) => void;
   dispose: () => void;
-  /** Morph projected path using the selected delay's catch-up plan (partial). */
+  /** Show a dashed alternate-route preview branching from the shard — not committed. */
+  previewCatchUpPlan: (waypointId: string) => void;
+  /** Hide the current reroute preview without committing anything. */
+  clearCatchUpPreview: () => void;
+  /** Commit the previewed route: morph the real projected path onto it. */
   applyCatchUpPlan: (waypointId: string) => void;
   resetCatchUpPlan: () => void;
+  /** Dolly the camera toward/away from its current target, clamped. */
+  zoomIn: () => void;
+  zoomOut: () => void;
   /** Enable shard hover hit-testing (pointer cursor + brighten). */
   setHoverEnabled: (active: boolean) => void;
   /** Move inspection playhead; does not hide/reveal path geometry. */
@@ -177,11 +196,20 @@ export function createJourneyController(
   // Weighted orbit: slower rotate + heavier damping (less twitchy).
   controls.dampingFactor = 0.072;
   controls.rotateSpeed = 0.42;
-  controls.enableZoom = false;
+  controls.enableZoom = true;
+  controls.zoomSpeed = 0.6;
   controls.enablePan = false;
   controls.minPolarAngle = Math.PI * 0.3;
   controls.maxPolarAngle = Math.PI * 0.46;
   controls.target.copy(frame.target);
+  // Clamp so zoom can't clip through path geometry or pull back to nothing
+  // useful. Bounds cover both the cinematic idle frame and the closer
+  // reframe-on-scrub/shard-click camera distance so neither fights zoom.
+  const scrubReframeDistance = new THREE.Vector3(6.5, 7.2, 11.5).length();
+  const cinematicDistance = frame.camPos.distanceTo(frame.target);
+  const zoomBaseDistance = Math.max(scrubReframeDistance, cinematicDistance);
+  controls.minDistance = zoomBaseDistance * 0.45;
+  controls.maxDistance = zoomBaseDistance * 1.9;
   controls.update();
 
   scene.add(new THREE.AmbientLight(0xfff6ea, 0.42));
@@ -211,6 +239,13 @@ export function createJourneyController(
   const projectedDash = createProjectedDashLine(model.projectedCurve);
   root.add(projectedDash);
 
+  // Reroute preview — hidden until a delay shard with a catch-up plan is
+  // selected; never committed until "Take this route" is clicked. A small
+  // "Suggested route" label rides along with it so the dashed line reads as
+  // a suggestion, not something already taken.
+  let routePreview: THREE.Line | null = null;
+  let routePreviewLabel: THREE.Sprite | null = null;
+
   const todayMarker = createTodayMarker(model.todayPosition, model.todayTangent);
   todayMarker.scale.setScalar(0.97);
   root.add(todayMarker);
@@ -224,11 +259,29 @@ export function createJourneyController(
     return g;
   });
 
+  // Predicted-risk shards on the projected line — hollow/wireframe, distinct
+  // from the solid filled crystals used for delays that already happened.
+  const forecastGroups = model.forecastShards.map((forecast) => {
+    const g = createForecastShard({
+      id: forecast.waypoint.id,
+      position: forecast.position,
+      tangent: forecast.tangent,
+    });
+    g.scale.setScalar(0.97);
+    root.add(g);
+    return g;
+  });
+
   // Timeline axis (WebGL rail + key ticks) — calendar X matches path X
   const scale = model.timelineScale;
   const months = monthlyTickMs(scale);
   const axisRail = createAxisRail(scale, months);
   root.add(axisRail);
+
+  // Vertical % axis — real cumulative-%-complete Y dimension.
+  const pctAxisRail = createPctAxisRail(scale);
+  root.add(pctAxisRail);
+  const pctAnchors = buildPctAxisAnchors(scale);
 
   const todayX = dateToX(model.todayIso, scale);
   const startX = dateToX(model.timeline.start, scale);
@@ -275,7 +328,7 @@ export function createJourneyController(
     scale
   );
   const fullJourneyPoints = [
-    new THREE.Vector3(dateToX(model.timeline.start, scale), 0.22, 0),
+    new THREE.Vector3(dateToX(model.timeline.start, scale), pctToY(0), 0),
     ...cursorJourney,
   ];
 
@@ -331,6 +384,13 @@ export function createJourneyController(
   );
   playheadDom.local.copy(playheadLocal);
 
+  // Mounted after the X-axis labels (which clear the overlay container).
+  const pctLabels: ScreenLabel[] = mountPctLabelElements(
+    options.axisOverlay,
+    pctAnchors,
+    options.axisClassNames.month
+  );
+
   // Axis endpoints in local space for drag → date mapping
   const axisStartLocal = new THREE.Vector3(0, scale.axisY + 0.55, scale.axisZ);
   const axisEndLocal = new THREE.Vector3(
@@ -360,8 +420,10 @@ export function createJourneyController(
   const pointer = new THREE.Vector2();
   let hoverEnabled = false;
   let hoveredClusterIndex = -1;
+  let hoveredForecastIndex = -1;
   let morphing = false;
   let selectedClusterIndex = -1;
+  let selectedForecastIndex = -1;
   let viewW = width;
   let viewH = height;
 
@@ -492,6 +554,19 @@ export function createJourneyController(
     return -1;
   }
 
+  function findForecastIndexFromObject(obj: THREE.Object3D): number {
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      const id = cur.userData?.forecastId as string | undefined;
+      if (id) {
+        const idx = model.forecastShards.findIndex((f) => f.waypoint.id === id);
+        if (idx >= 0) return idx;
+      }
+      cur = cur.parent;
+    }
+    return -1;
+  }
+
   function onPointerDown(event: PointerEvent) {
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -502,13 +577,25 @@ export function createJourneyController(
     clusterGroups.forEach((g) => {
       if (g.visible) g.traverse((o) => targets.push(o));
     });
+    forecastGroups.forEach((g) => {
+      if (g.visible) g.traverse((o) => targets.push(o));
+    });
     const hits = raycaster.intersectObjects(targets, false);
     if (hits.length === 0) return;
+
+    const forecastIndex = findForecastIndexFromObject(hits[0].object);
+    if (forecastIndex >= 0) {
+      selectedForecastIndex = forecastIndex;
+      selectedClusterIndex = -1;
+      callbacks.onForecastSelect?.(model.forecastShards[forecastIndex].waypoint);
+      return;
+    }
 
     const clusterIndex = findClusterIndexFromObject(hits[0].object);
     if (clusterIndex < 0) return;
 
     selectedClusterIndex = clusterIndex;
+    selectedForecastIndex = -1;
     const cluster = model.clusters[clusterIndex];
     callbacks.onClusterSelect({
       cluster,
@@ -526,11 +613,13 @@ export function createJourneyController(
     raycaster.setFromCamera(pointer, camera);
     const targets: THREE.Object3D[] = [];
     clusterGroups.forEach((g) => g.traverse((o) => targets.push(o)));
+    forecastGroups.forEach((g) => g.traverse((o) => targets.push(o)));
     const hits = raycaster.intersectObjects(targets, false);
-    const nextHover =
-      hits.length > 0 ? findClusterIndexFromObject(hits[0].object) : -1;
-    hoveredClusterIndex = nextHover;
-    canvas.style.cursor = nextHover >= 0 ? "pointer" : "grab";
+    const hitObj = hits.length > 0 ? hits[0].object : null;
+    hoveredClusterIndex = hitObj ? findClusterIndexFromObject(hitObj) : -1;
+    hoveredForecastIndex = hitObj ? findForecastIndexFromObject(hitObj) : -1;
+    canvas.style.cursor =
+      hoveredClusterIndex >= 0 || hoveredForecastIndex >= 0 ? "pointer" : "grab";
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);
@@ -570,8 +659,30 @@ export function createJourneyController(
       }
     });
 
+    forecastGroups.forEach((group, i) => {
+      const crystal = group.userData.crystal as THREE.Mesh;
+      const ring = group.userData.ring as THREE.Mesh;
+      const ringMat = group.userData.ringMat as THREE.MeshBasicMaterial;
+
+      const isHover = i === hoveredForecastIndex;
+      const isSelected = i === selectedForecastIndex;
+      crystal.scale.setScalar(isHover ? 1.08 : isSelected ? 1.04 : 1);
+
+      if (isHover || isSelected) {
+        ring.visible = true;
+        ring.scale.set(1.12, 1.12, 1.12);
+        ringMat.opacity = isHover ? 0.2 : 0.14;
+      } else {
+        ring.visible = false;
+        ringMat.opacity = 0;
+      }
+    });
+
     updateLabelWorldFromRoot(screenLabels, root);
     syncProjectedLabels(screenLabels, camera, viewW, viewH);
+
+    updateLabelWorldFromRoot(pctLabels, root);
+    syncPctLabels(pctLabels, camera, viewW, viewH);
 
     playheadDom.local.set(
       dateToX(scrubIso, scale),
@@ -621,6 +732,13 @@ export function createJourneyController(
         g.scale,
         { x: 1, y: 1, z: 1, duration: 0.45, ease: "power2.out" },
         0.2 + i * 0.04
+      );
+    });
+    forecastGroups.forEach((g, i) => {
+      entrance.to(
+        g.scale,
+        { x: 1, y: 1, z: 1, duration: 0.45, ease: "power2.out" },
+        0.24 + i * 0.05
       );
     });
   });
@@ -764,8 +882,80 @@ export function createJourneyController(
   applyScrubVisuals(scrubIso);
   callbacks.onScrubChange?.(scrubIso);
 
+  function clearCatchUpPreview() {
+    if (routePreview) routePreview.visible = false;
+    if (routePreviewLabel) routePreviewLabel.visible = false;
+  }
+
+  function previewCatchUpPlan(waypointId: string) {
+    const wp = model.waypoints.find((w) => w.id === waypointId);
+    const daysRecovered = recoveryDaysForWaypoint(wp);
+    if (!wp || daysRecovered <= 0) {
+      clearCatchUpPreview();
+      return;
+    }
+    const shard =
+      model.shards.find((s) => s.waypoint.id === waypointId) ??
+      model.forecastShards.find((s) => s.waypoint.id === waypointId);
+    const shardPosition = shard?.position ?? model.todayPosition;
+
+    const tentative = { ...appliedRecoveries, [waypointId]: daysRecovered };
+    const targets = buildCatchUpProjectedControls(
+      model.waypoints,
+      model.timeline,
+      model.todayIso,
+      model.todayPosition,
+      tentative
+    );
+    if (!targets || targets.length < 2) {
+      clearCatchUpPreview();
+      return;
+    }
+
+    const previewPoints = buildRoutePreviewPoints(shardPosition, targets);
+    const midPoint = previewPoints[Math.floor(previewPoints.length / 2)]
+      .clone()
+      .add(new THREE.Vector3(0, 0.42, 0));
+
+    const isNew = !routePreview;
+    if (!routePreview) {
+      routePreview = createRoutePreviewLine(previewPoints);
+      root.add(routePreview);
+    } else {
+      updateRoutePreviewLine(routePreview, previewPoints);
+      routePreview.visible = true;
+    }
+    // Suggestion, not an action already taken — a distinct dash-in entrance,
+    // separate from the card's own "expo.out" entrance.
+    const lineMat = routePreview.material as THREE.LineDashedMaterial;
+    gsap.killTweensOf(lineMat);
+    gsap.fromTo(
+      lineMat,
+      { opacity: 0 },
+      { opacity: 0.85, duration: isNew ? 0.5 : 0.35, ease: "power2.out" }
+    );
+
+    if (!routePreviewLabel) {
+      routePreviewLabel = createRoutePreviewLabel("Suggested route");
+      root.add(routePreviewLabel);
+    }
+    routePreviewLabel.position.copy(midPoint);
+    routePreviewLabel.visible = true;
+    gsap.killTweensOf(routePreviewLabel.scale);
+    routePreviewLabel.scale.set(0.001, 0.001, 0.001);
+    gsap.to(routePreviewLabel.scale, {
+      x: 1.7,
+      y: 1.7 * (128 / 512),
+      z: 1,
+      duration: 0.45,
+      delay: 0.1,
+      ease: EASE.pop,
+    });
+  }
+
   function applyCatchUpPlan(waypointId: string) {
     if (morphing) return;
+    clearCatchUpPreview();
     const wp = model.waypoints.find((w) => w.id === waypointId);
     const daysRecovered = recoveryDaysForWaypoint(wp);
     if (!wp || daysRecovered <= 0) {
@@ -894,6 +1084,7 @@ export function createJourneyController(
   }
 
   function resetCatchUpPlan() {
+    clearCatchUpPreview();
     morphing = false;
     for (const k of Object.keys(appliedRecoveries)) {
       delete appliedRecoveries[k];
@@ -922,6 +1113,21 @@ export function createJourneyController(
 
     idleActive = true;
     if (!userOrbiting) startIdleDrift(true);
+  }
+
+  function dollyBy(factor: number) {
+    const offset = camera.position.clone().sub(controls.target);
+    const dist = offset.length();
+    if (dist < 1e-6) return;
+    const nextDist = THREE.MathUtils.clamp(
+      dist * factor,
+      controls.minDistance,
+      controls.maxDistance
+    );
+    offset.setLength(nextDist);
+    camera.position.copy(controls.target).add(offset);
+    baseCam.copy(camera.position);
+    controls.update();
   }
 
   function setSize(w: number, h: number) {
@@ -968,8 +1174,12 @@ export function createJourneyController(
   return {
     setSize,
     dispose,
+    previewCatchUpPlan,
+    clearCatchUpPreview,
     applyCatchUpPlan,
     resetCatchUpPlan,
+    zoomIn: () => dollyBy(0.82),
+    zoomOut: () => dollyBy(1.22),
     setHoverEnabled: (active: boolean) => {
       hoverEnabled = active;
       if (!active) {
@@ -990,12 +1200,16 @@ export function createJourneyController(
     },
     getScrubIso: () => scrubIso,
     getShardScreenAnchor: () => {
-      if (selectedClusterIndex < 0) return null;
-      const cluster = model.clusters[selectedClusterIndex];
-      if (!cluster) return null;
+      const anchorPos =
+        selectedClusterIndex >= 0
+          ? model.clusters[selectedClusterIndex]?.position
+          : selectedForecastIndex >= 0
+            ? model.forecastShards[selectedForecastIndex]?.position
+            : null;
+      if (!anchorPos) return null;
       root.updateMatrixWorld(true);
       const world = new THREE.Vector3();
-      world.copy(cluster.position).applyMatrix4(root.matrixWorld);
+      world.copy(anchorPos).applyMatrix4(root.matrixWorld);
       const ndc = world.project(camera);
       const behind = ndc.z > 1;
       const x = Math.round((ndc.x * 0.5 + 0.5) * viewW);

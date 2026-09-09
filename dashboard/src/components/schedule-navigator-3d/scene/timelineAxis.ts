@@ -81,6 +81,135 @@ export function dateToX(iso: string, scale: TimelineScale): number {
   return ((t - scale.startMs) / scale.spanMs) * scale.xSpan;
 }
 
+/** World Y at 0% cumulative complete. */
+export const PCT_AXIS_Y_BASE = 0.15;
+/** World Y span from 0% to 100% cumulative complete. */
+export const PCT_AXIS_Y_SPAN = 4.0;
+/**
+ * World X of the vertical % axis. Anchored to exactly the same X as the
+ * "START" date marker (dateToX(timeline.start) === 0 by construction) so the
+ * two visually align instead of floating apart. Previously hardcoded to 10,
+ * which put the rail near "Apr 15" — disconnected from the actual start.
+ */
+export const PCT_AXIS_X = 0;
+
+/** Cumulative % complete (0-100) → world Y, driving planned/actual/projected height. */
+export function pctToY(pct: number): number {
+  const clamped = Math.min(100, Math.max(0, pct));
+  return PCT_AXIS_Y_BASE + (clamped / 100) * PCT_AXIS_Y_SPAN;
+}
+
+export interface PctAxisAnchor {
+  id: string;
+  pct: number;
+  label: string;
+  world: THREE.Vector3;
+}
+
+const PCT_TICKS = [0, 25, 50, 75, 100];
+
+export function buildPctAxisAnchors(scale: TimelineScale): PctAxisAnchor[] {
+  return PCT_TICKS.map((pct) => ({
+    id: `pct-${pct}`,
+    pct,
+    label: `${pct}%`,
+    world: new THREE.Vector3(PCT_AXIS_X, pctToY(pct), scale.axisZ),
+  }));
+}
+
+/** Vertical % rail + tick marks — same warm ink language as createAxisRail. */
+export function createPctAxisRail(scale: TimelineScale): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "pct-axis";
+
+  const railMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#3d3732"),
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+  });
+  const railHeight = PCT_AXIS_Y_SPAN;
+  const railGeo = new THREE.BoxGeometry(0.02, railHeight, 0.02);
+  const rail = new THREE.Mesh(railGeo, railMat);
+  rail.position.set(PCT_AXIS_X, PCT_AXIS_Y_BASE + railHeight / 2, scale.axisZ);
+  group.add(rail);
+
+  const tickMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#5a5249"),
+    transparent: true,
+    opacity: 0.6,
+    depthWrite: false,
+  });
+  for (const pct of PCT_TICKS) {
+    const tickGeo = new THREE.BoxGeometry(0.34, 0.02, 0.02);
+    const tick = new THREE.Mesh(tickGeo, tickMat);
+    tick.position.set(PCT_AXIS_X + 0.17, pctToY(pct), scale.axisZ);
+    group.add(tick);
+  }
+
+  return group;
+}
+
+/** Mount static (non-interactive) % pill labels beside the vertical rail. */
+export function mountPctLabelElements(
+  container: HTMLElement,
+  anchors: PctAxisAnchor[],
+  className: string
+): ScreenLabel[] {
+  const labels: ScreenLabel[] = [];
+  for (const a of anchors) {
+    const el = document.createElement("span");
+    el.className = className;
+    el.dataset.kind = "pct";
+    el.textContent = a.label;
+    el.style.visibility = "hidden";
+    el.style.pointerEvents = "none";
+    container.appendChild(el);
+    labels.push({
+      el,
+      local: a.world.clone(),
+      world: a.world.clone(),
+      lastX: -9999,
+      lastY: -9999,
+    });
+  }
+  return labels;
+}
+
+/** Project % labels to screen, anchored to the left of their tick. */
+export function syncPctLabels(
+  labels: ScreenLabel[],
+  camera: THREE.Camera,
+  width: number,
+  height: number
+): void {
+  const ndc = new THREE.Vector3();
+  for (const item of labels) {
+    ndc.copy(item.world).project(camera);
+    const behind = ndc.z > 1;
+    const x = Math.round((ndc.x * 0.5 + 0.5) * width);
+    const y = Math.round((-ndc.y * 0.5 + 0.5) * height);
+    const onScreen =
+      !behind && x >= -120 && x <= width + 40 && y >= -40 && y <= height + 40;
+
+    if (!onScreen) {
+      if (item.el.style.visibility !== "hidden") {
+        item.el.style.visibility = "hidden";
+      }
+      continue;
+    }
+    if (item.el.style.visibility !== "visible") {
+      item.el.style.visibility = "visible";
+    }
+    const transform = `translate3d(${x}px, ${y}px, 0) translate(-100%, -50%) translateX(-10px)`;
+    if (transform !== item.el.style.transform) {
+      item.lastX = x;
+      item.lastY = y;
+      item.el.style.transform = transform;
+    }
+  }
+}
+
 export function msToX(ms: number, scale: TimelineScale): number {
   return ((ms - scale.startMs) / scale.spanMs) * scale.xSpan;
 }

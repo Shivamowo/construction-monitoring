@@ -1,5 +1,7 @@
-import { ScheduleNavigator } from "@/components/schedule-navigator/ScheduleNavigator";
+"use client";
+
+import { ScheduleNavigator3D } from "@/components/schedule-navigator-3d/ScheduleNavigator3D";
 
 export default function Home() {
-  return <ScheduleNavigator />;
+  return <ScheduleNavigator3D />;
 }
