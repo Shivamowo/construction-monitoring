@@ -1,0 +1,37 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.compact {
+  font-size: 0.58rem;
+  padding: 0.16rem 0.35rem;
+}
+
+.forged {
+  color: #7a4300;
+  background: var(--forged-bg);
+  border-color: rgba(184, 107, 18, 0.45);
+}
+
+.real {
+  color: #14523f;
+  background: rgba(31, 122, 108, 0.12);
+  border-color: rgba(31, 122, 108, 0.35);
+}
+
+.derived {
+  color: #1f3d55;
+  background: rgba(61, 90, 115, 0.12);
+  border-color: rgba(61, 90, 115, 0.35);
+}

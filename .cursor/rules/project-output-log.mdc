@@ -1,0 +1,13 @@
+---
+description: Write task results to PROJECT_OUTPUT.md as the canonical output log
+alwaysApply: true
+---
+
+# Project output log
+
+After completing (or meaningfully advancing) a user-requested task, update `PROJECT_OUTPUT.md` in the repo root.
+
+- Put findings, deliverables, paths, counts, and status in that file (especially the **Latest output** and **Task history** sections).
+- Keep chat replies short; point to `PROJECT_OUTPUT.md` when detail belongs there.
+- Do not invent parallel status docs; update this one in place.
+- Preserve existing useful sections; append history rather than wiping the whole file unless the user asks to reset it.

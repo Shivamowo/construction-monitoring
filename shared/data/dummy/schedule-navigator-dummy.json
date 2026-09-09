@@ -1,0 +1,242 @@
+{
+  "dataProvenance": "dummy",
+  "projectId": "dummy-schependomlaan-dev",
+  "projectName": "Schependomlaan (dummy)",
+  "scenarioId": "mid-build-weather-customs-inspection-2015",
+  "scenarioSummary": "See shared/data/dummy/README.md. Start 2015-03-02, planned end 2015-09-18, asOf 2015-07-10. Three delays: foundations weather +9d (recover 6), steel customs +14d (no recovery), envelope inspection +7d (recover 4). At-risk projected handover 2015-10-18 (+30d); gap always includes the unresolved 14d steel hold.",
+  "timeline": {
+    "start": "2015-03-02",
+    "end": "2015-09-18",
+    "asOf": "2015-07-10",
+    "projectedEnd": "2015-10-18"
+  },
+  "waypoints": [
+    {
+      "id": "site-prep",
+      "taskName": "Terreinvoorbereiding",
+      "taskNameEn": "Site preparation",
+      "milestoneClass": "Other",
+      "componentCount": 12,
+      "plannedStart": "2015-03-02",
+      "plannedEnd": "2015-03-20",
+      "localDelayDays": 0,
+      "projectedEnd": "2015-03-20",
+      "cascadeShiftBefore": 0,
+      "cascadeShiftAfter": 0,
+      "counts": {
+        "onTime": 12,
+        "behind": 0,
+        "ahead": 0,
+        "notScheduled": 0,
+        "delayedComponents": 0
+      },
+      "deviationDaysSource": "forged",
+      "severity": "none"
+    },
+    {
+      "id": "foundations",
+      "taskName": "Fundering",
+      "taskNameEn": "Foundations",
+      "milestoneClass": "Structure",
+      "componentCount": 28,
+      "plannedStart": "2015-03-16",
+      "plannedEnd": "2015-04-10",
+      "localDelayDays": 9,
+      "projectedEnd": "2015-04-19",
+      "cascadeShiftBefore": 0,
+      "cascadeShiftAfter": 9,
+      "delayReason": "Prolonged rainfall and high groundwater cancelled consecutive pour days across the March–April window.",
+      "catchUpPlan": {
+        "daysLost": 9,
+        "daysRecovered": 6,
+        "summary": "Weekend overtime pours and accelerated rebar set recover 6 of 9 days; 3 days remain on the cascade."
+      },
+      "counts": {
+        "onTime": 16,
+        "behind": 10,
+        "ahead": 2,
+        "notScheduled": 0,
+        "delayedComponents": 10
+      },
+      "deviationDaysSource": "forged",
+      "severity": "mild"
+    },
+    {
+      "id": "ground-floor-slab",
+      "taskName": "Beganegrondvloer",
+      "taskNameEn": "Ground floor slab",
+      "milestoneClass": "Structure",
+      "componentCount": 16,
+      "plannedStart": "2015-04-06",
+      "plannedEnd": "2015-04-28",
+      "localDelayDays": 0,
+      "projectedEnd": "2015-05-07",
+      "cascadeShiftBefore": 9,
+      "cascadeShiftAfter": 9,
+      "counts": {
+        "onTime": 14,
+        "behind": 0,
+        "ahead": 2,
+        "notScheduled": 0,
+        "delayedComponents": 0
+      },
+      "deviationDaysSource": "forged",
+      "severity": "none"
+    },
+    {
+      "id": "structural-frame",
+      "taskName": "Constructieve frame",
+      "taskNameEn": "Structural frame",
+      "milestoneClass": "Framing",
+      "componentCount": 42,
+      "plannedStart": "2015-04-20",
+      "plannedEnd": "2015-05-29",
+      "localDelayDays": 14,
+      "projectedEnd": "2015-06-21",
+      "cascadeShiftBefore": 9,
+      "cascadeShiftAfter": 23,
+      "delayReason": "Primary steel package held at Rotterdam customs on a documentation mismatch; erection stood down pending release.",
+      "counts": {
+        "onTime": 12,
+        "behind": 26,
+        "ahead": 4,
+        "notScheduled": 0,
+        "delayedComponents": 26
+      },
+      "deviationDaysSource": "forged",
+      "severity": "severe"
+    },
+    {
+      "id": "envelope-shell",
+      "taskName": "Gevelschil",
+      "taskNameEn": "Envelope shell",
+      "milestoneClass": "Envelope",
+      "componentCount": 35,
+      "plannedStart": "2015-05-18",
+      "plannedEnd": "2015-06-25",
+      "localDelayDays": 7,
+      "projectedEnd": "2015-07-25",
+      "cascadeShiftBefore": 23,
+      "cascadeShiftAfter": 30,
+      "delayReason": "Firestopping inspection failed; remediation and re-inspection required before envelope close-in.",
+      "catchUpPlan": {
+        "daysLost": 7,
+        "daysRecovered": 4,
+        "summary": "Parallel trades on cleared elevations while remediation runs recover 4 of 7 days; 3 days remain."
+      },
+      "counts": {
+        "onTime": 14,
+        "behind": 17,
+        "ahead": 4,
+        "notScheduled": 0,
+        "delayedComponents": 17
+      },
+      "deviationDaysSource": "forged",
+      "severity": "mild"
+    },
+    {
+      "id": "mep-rough-in",
+      "taskName": "Installaties ruwbouw",
+      "taskNameEn": "MEP rough-in",
+      "milestoneClass": "MEP",
+      "componentCount": 48,
+      "plannedStart": "2015-06-08",
+      "plannedEnd": "2015-07-17",
+      "localDelayDays": 0,
+      "projectedEnd": "2015-08-16",
+      "cascadeShiftBefore": 30,
+      "cascadeShiftAfter": 30,
+      "counts": {
+        "onTime": 40,
+        "behind": 0,
+        "ahead": 8,
+        "notScheduled": 0,
+        "delayedComponents": 0
+      },
+      "deviationDaysSource": "forged",
+      "severity": "none"
+    },
+    {
+      "id": "interior-finishes",
+      "taskName": "Afwerking interieur",
+      "taskNameEn": "Interior finishes",
+      "milestoneClass": "Finishes",
+      "componentCount": 55,
+      "plannedStart": "2015-07-13",
+      "plannedEnd": "2015-08-21",
+      "localDelayDays": 0,
+      "projectedEnd": "2015-09-20",
+      "cascadeShiftBefore": 30,
+      "cascadeShiftAfter": 30,
+      "counts": {
+        "onTime": 48,
+        "behind": 0,
+        "ahead": 7,
+        "notScheduled": 0,
+        "delayedComponents": 0
+      },
+      "deviationDaysSource": "forged",
+      "severity": "none"
+    },
+    {
+      "id": "roof-completion",
+      "taskName": "Dakafwerking",
+      "taskNameEn": "Roof completion",
+      "milestoneClass": "Envelope",
+      "componentCount": 14,
+      "plannedStart": "2015-08-03",
+      "plannedEnd": "2015-08-28",
+      "localDelayDays": 0,
+      "projectedEnd": "2015-09-27",
+      "cascadeShiftBefore": 30,
+      "cascadeShiftAfter": 30,
+      "counts": {
+        "onTime": 12,
+        "behind": 0,
+        "ahead": 2,
+        "notScheduled": 0,
+        "delayedComponents": 0
+      },
+      "deviationDaysSource": "forged",
+      "severity": "none"
+    },
+    {
+      "id": "handover",
+      "taskName": "Oplevering",
+      "taskNameEn": "Handover",
+      "milestoneClass": "Other",
+      "componentCount": 8,
+      "plannedStart": "2015-08-31",
+      "plannedEnd": "2015-09-18",
+      "localDelayDays": 0,
+      "projectedEnd": "2015-10-18",
+      "cascadeShiftBefore": 30,
+      "cascadeShiftAfter": 30,
+      "counts": {
+        "onTime": 8,
+        "behind": 0,
+        "ahead": 0,
+        "notScheduled": 0,
+        "delayedComponents": 0
+      },
+      "deviationDaysSource": "forged",
+      "severity": "none"
+    }
+  ],
+  "notScheduled": {
+    "count": 24,
+    "note": "DUMMY DATA — fabricated not_scheduled count for dashboard UI development only. Not from BIM fusion."
+  },
+  "provenance": {
+    "deviationDays": "FORGED",
+    "volumetricDeviationPct": "FORGED",
+    "cascadeModel": "illustrative-dummy-scenario"
+  },
+  "footnotes": [
+    "DUMMY DATASET (dataProvenance=dummy) — coherent mid-build scenario documented in shared/data/dummy/README.md. Not derived from schedule.json / fusion.json / deviation.json.",
+    "Cascade is illustrative and not dependency-graph-aware. Cumulative +30d at-risk = foundations 9 + steel customs 14 + envelope inspection 7.",
+    "Catch-up plans are partial: foundations recover 6/9; envelope recover 4/7; steel customs has no recovery — projected finish stays after planned end.",
+    "timeline.asOf (2015-07-10) drives the actual-vs-projected split — not a waypoint-fraction placeholder.",
+    "Swap USE_DUMMY_DATA=false in dashboard/.env.local to load the real aggregated pipeline outputs again."
+  ]
+}

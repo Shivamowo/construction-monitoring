@@ -22,11 +22,18 @@ npm run validate
 | `metadata.json` | 7 Metadata | timeline/zones DERIVED; milestoneVocabulary maps Dutch tasks → locked buckets |
 | `data.json` | Bundle | Full schema root incl. `schemaVersion` + `generatedAt` |
 | `pointclouds/` | 3 | Voxel-downsampled real PLYs |
-| `photos/` | 4 | **Empty placeholders dir — see TODO below** |
+| `photos/` + `photos-attribution.json` | 4 | Pexels illustrative JPEGs and per-image attribution |
 
-## TODO (manual human step)
+## Placeholder photos (Pexels)
 
-Do **not** scrape or auto-download photos. Source CC-licensed site/construction images manually and drop them into `shared/data/photos/` using the filenames referenced in `photos.json` (e.g. `placeholder-001.jpg`, `placeholder-002.jpg`, …).
+Source the real illustrative construction images and their attribution sidecar with the opt-in Pexels workflow:
+
+```bash
+cd shared/scripts
+PEXELS_API_KEY=<api-key> npm run source-photos
+```
+
+Obtain a free API key from [Pexels](https://www.pexels.com/api/) and provide it only through the environment; never commit it. The command writes JPEGs to `photos/` using the exact filenames in `photos.json`, and writes `photos-attribution.json` (Pexels URL, photographer name, profile URL, photo ID). It does not run during generation. The photo-to-component and milestone associations remain **FORGED**.
 
 ## Volumetric deviation note
 

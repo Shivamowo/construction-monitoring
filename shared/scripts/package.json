@@ -6,10 +6,10 @@
   "scripts": {
     "generate": "tsx generate-all.ts",
     "validate": "tsx validate-data.ts",
+    "source-photos": "tsx source-pexels-photos.ts",
     "inspect-xlsx": "tsx inspect-xlsx.ts",
     "parse-ifc": "tsx parse-ifc.ts",
-    "parse-schedule": "tsx parse-schedule.ts",
-    "downsample": "tsx downsample-pointclouds.ts"
+    "parse-schedule": "tsx parse-schedule.ts"
   },
   "dependencies": {
     "@types/node": "^26.5.0",

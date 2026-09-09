@@ -1,7 +1,6 @@
 /**
- * Stream 4: Site engineer photos — JSON records only (placeholder imageRefs).
- * TODO: A human must manually source CC-licensed images into shared/data/photos/
- * matching the placeholder-NNN.jpg filenames. Do NOT scrape/download automatically.
+ * Stream 4: Site engineer photos — synthetic records only (placeholder imageRefs).
+ * source-openverse-photos.ts optionally sources CC-licensed illustrative JPEGs.
  */
 import path from "node:path";
 import { DATA, DRONE_FOOTAGE_URL, seededRandom, writeJson } from "./lib/paths";
