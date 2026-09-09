@@ -4,6 +4,8 @@ import type { ShardCluster } from "./pathFromWaypoints";
 const TUBE_RADIUS_ACTUAL = 0.085;
 const TUBE_RADIUS_PLANNED = 0.055;
 const TUBE_RADIUS_PROJECTED = 0.07;
+/** Boldest of all lines — "this is the route you're on now," confident/current. */
+const TUBE_RADIUS_TAKEN = 0.1;
 const TUBE_RADIAL = 24;
 
 export function createPlannedTube(
@@ -115,6 +117,53 @@ export function createOrUpdateProjectedTube(
   return mesh;
 }
 
+/**
+ * "This is the route you're on now" — solid, confident, bright confirmed-blue
+ * (Google-Maps-directions blue), NOT a shade/opacity variant of any of the
+ * other 4 line colors (navy planned, teal actual, terracotta projected, sage
+ * preview). Bigger radius than every other line for visual weight/priority.
+ * Replaces the amber "at risk" projected tube once at least one route has
+ * been taken.
+ */
+export function createOrUpdateTakenRouteTube(
+  curve: THREE.CatmullRomCurve3,
+  existing?: THREE.Mesh | null
+): THREE.Mesh {
+  const tubular = Math.max(64, Math.floor(curve.getLength() * 8));
+  const geometry = new THREE.TubeGeometry(
+    curve,
+    tubular,
+    TUBE_RADIUS_TAKEN,
+    TUBE_RADIAL,
+    false
+  );
+
+  if (existing) {
+    existing.geometry.dispose();
+    existing.geometry = geometry;
+    return existing;
+  }
+
+  const material = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color("#1a73e8"),
+    metalness: 0.05,
+    roughness: 0.28,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.25,
+    // Warm ambient/env light on a cream backdrop washes out cool blues under
+    // physical shading — self-emission keeps the hue reading as saturated
+    // confident blue instead of a pale periwinkle.
+    emissive: new THREE.Color("#1a73e8"),
+    emissiveIntensity: 0.45,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.name = "taken-route";
+  mesh.userData.kind = "taken-route";
+  return mesh;
+}
+
 /** Dashed centerline overlay so the forecast reads as provisional. */
 export function createProjectedDashLine(
   curve: THREE.CatmullRomCurve3
@@ -171,6 +220,31 @@ export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Line {
   line.name = "route-preview";
   line.userData.kind = "route-preview";
   line.position.y += 0.03;
+  return line;
+}
+
+/**
+ * Ghost of a projected-path segment as it existed immediately before a
+ * catch-up route was taken — "this used to be the plan, no longer current."
+ * Muted grey, low opacity, dashed; kept permanently (never removed), one per
+ * commit, so multiple taken routes each leave their own ghost behind.
+ */
+export function createGhostRouteLine(curve: THREE.CatmullRomCurve3): THREE.Line {
+  const pts = curve.getPoints(80);
+  const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  const material = new THREE.LineDashedMaterial({
+    color: new THREE.Color("#9a958c"),
+    dashSize: 0.4,
+    gapSize: 0.35,
+    transparent: true,
+    opacity: 0.32,
+    linewidth: 1,
+  });
+  const line = new THREE.Line(geometry, material);
+  line.computeLineDistances();
+  line.name = "ghost-route";
+  line.userData.kind = "ghost-route";
+  line.position.y -= 0.012; // sit a hair below the live lines, avoid z-fighting
   return line;
 }
 

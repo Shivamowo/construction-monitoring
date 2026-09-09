@@ -5,7 +5,8 @@ export type AxisLabelKind =
   | "start"
   | "plannedEnd"
   | "today"
-  | "projectedEnd";
+  | "projectedEnd"
+  | "route";
 
 export interface TimelineScale {
   /** Inclusive calendar start (ms UTC midnight). */
@@ -161,9 +162,22 @@ export function mountPctLabelElements(
     const el = document.createElement("span");
     el.className = className;
     el.dataset.kind = "pct";
-    el.textContent = a.label;
     el.style.visibility = "hidden";
     el.style.pointerEvents = "none";
+
+    const dot = document.createElement("span");
+    dot.dataset.part = "dot";
+    el.appendChild(dot);
+
+    const leader = document.createElement("span");
+    leader.dataset.part = "leader";
+    el.appendChild(leader);
+
+    const textWrap = document.createElement("span");
+    textWrap.dataset.part = "text";
+    textWrap.textContent = a.label;
+    el.appendChild(textWrap);
+
     container.appendChild(el);
     labels.push({
       el,
@@ -202,6 +216,125 @@ export function syncPctLabels(
       item.el.style.visibility = "visible";
     }
     const transform = `translate3d(${x}px, ${y}px, 0) translate(-100%, -50%) translateX(-10px)`;
+    if (transform !== item.el.style.transform) {
+      item.lastX = x;
+      item.lastY = y;
+      item.el.style.transform = transform;
+    }
+  }
+}
+
+/**
+ * Unified collision-avoidance pass across EVERY DOM-projected label kind —
+ * month ticks, key ticks (start/plannedEnd/today/projectedEnd), and the
+ * vertical % axis pills. Previously key labels had their own row-stacking
+ * system and % labels had none at all, so e.g. "START" and "0%" (same world
+ * X after the % axis was anchored to match START) could land in the exact
+ * same screen box. This does one real bounding-box overlap test across all
+ * of them and nudges collisions along each label's own natural push-away
+ * axis: key labels push further up, % labels push further left, month
+ * labels push further down — so priority order (key, then %, then month)
+ * keeps the most load-bearing labels closest to their true anchor point.
+ */
+export function syncAllProjectedLabels(
+  labels: ScreenLabel[],
+  camera: THREE.Camera,
+  width: number,
+  height: number
+): void {
+  const ndc = new THREE.Vector3();
+  const priority = (kind: string | undefined): number => {
+    if (kind === "route") return 1;
+    if (kind === "pct") return 2;
+    if (kind === "month") return 3;
+    return 0; // start / plannedEnd / today / projectedEnd
+  };
+
+  const projected = labels.map((item) => {
+    ndc.copy(item.world).project(camera);
+    const behind = ndc.z > 1;
+    const x = Math.round((ndc.x * 0.5 + 0.5) * width);
+    const y = Math.round((-ndc.y * 0.5 + 0.5) * height);
+    const onScreen =
+      !behind && x >= -120 && x <= width + 120 && y >= -40 && y <= height + 40;
+    return { item, x, y, onScreen };
+  });
+
+  const order = [...projected].sort(
+    (a, b) => priority(a.item.el.dataset.kind) - priority(b.item.el.dataset.kind)
+  );
+
+  const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+
+  for (const p of order) {
+    const { item, x, y, onScreen } = p;
+    if (!onScreen) {
+      if (item.el.style.visibility !== "hidden") item.el.style.visibility = "hidden";
+      continue;
+    }
+    if (item.el.style.visibility !== "visible") item.el.style.visibility = "visible";
+
+    const kind = item.el.dataset.kind;
+    const isPct = kind === "pct";
+    const isMonth = kind === "month";
+    // Children are position:absolute now (leader-line layout), so the
+    // outer el itself has no intrinsic box — measure the text part instead.
+    const textEl = item.el.querySelector<HTMLElement>('[data-part="text"]');
+    const lw = textEl?.offsetWidth || 40;
+    const rh = textEl?.offsetHeight || 28;
+    const stride = (isPct ? lw : rh) + 8;
+    // The rendered text plate has its own CSS gap/padding/box-shadow the
+    // model below doesn't fully capture — pad the estimated box outward so
+    // a razor-thin real overlap (like Projected End vs an Alternate route
+    // label landing a few px apart) can never slip through undetected.
+    const SAFETY = 5;
+    // Matches the CSS "+3px"/"+4px"/"+5px" gap between leader and text per kind.
+    const textGap = isPct ? 5 : isMonth ? 3 : 3;
+
+    // Base gap keeps text clear of its own anchor dot before any collision
+    // shift is added — the leader line's length is baseGap + shift, so a
+    // label pushed into a lower/higher row visibly grows a longer leader
+    // rather than silently jumping away from its real anchor.
+    const baseGap = isPct ? 10 : isMonth ? 8 : 12;
+    let shift = 0;
+    let x0 = 0;
+    let y0 = 0;
+    let x1 = 0;
+    let y1 = 0;
+    for (;;) {
+      const leaderLen = baseGap + shift + textGap;
+      if (isPct) {
+        x1 = x - leaderLen;
+        x0 = x1 - lw;
+        y0 = y - rh / 2;
+        y1 = y + rh / 2;
+      } else if (isMonth) {
+        x0 = x - lw / 2;
+        x1 = x + lw / 2;
+        y0 = y + leaderLen;
+        y1 = y0 + rh;
+      } else {
+        x0 = x - lw / 2;
+        x1 = x + lw / 2;
+        y1 = y - leaderLen;
+        y0 = y1 - rh;
+      }
+      const clash = placed.some(
+        (b) =>
+          x0 - SAFETY < b.x1 &&
+          x1 + SAFETY > b.x0 &&
+          y0 - SAFETY < b.y1 &&
+          y1 + SAFETY > b.y0
+      );
+      if (!clash) {
+        placed.push({ x0, y0, x1, y1 });
+        break;
+      }
+      shift += stride;
+    }
+
+    item.el.style.setProperty("--leader-len", `${baseGap + shift}px`);
+    const transform = `translate3d(${x}px, ${y}px, 0)`;
     if (transform !== item.el.style.transform) {
       item.lastX = x;
       item.lastY = y;
@@ -284,7 +417,15 @@ export function buildAxisAnchors(
     iso,
     label,
     sublabel,
-    world: new THREE.Vector3(dateToX(iso, scale), yKey, z),
+    // "today" sits extra-high: the today-marker ink-stamp (needle + crossbar,
+    // ~1 world unit tall) lives ON the path itself, not at the rail, so the
+    // uniform yKey height used by the other key labels can land right on top
+    // of it depending on progress % / camera angle.
+    world: new THREE.Vector3(
+      dateToX(iso, scale),
+      kind === "today" ? yKey + 0.35 : yKey,
+      z
+    ),
   });
 
   anchors.push(key("start", "start", input.start, "Start", formatDay(input.start)));
@@ -486,16 +627,31 @@ export function mountAxisLabelElements(
     el.dataset.iso = a.iso;
     el.setAttribute("aria-label", `Scrub to ${a.label}${a.sublabel ? `, ${a.sublabel}` : ""}`);
 
+    // Deliberate annotation, not a UI button: a small dot at the exact
+    // anchor, a thin leader line, and the text riding at the end of it —
+    // instead of a uniform pill floating disconnected from its subject.
+    const dot = document.createElement("span");
+    dot.dataset.part = "dot";
+    el.appendChild(dot);
+
+    const leader = document.createElement("span");
+    leader.dataset.part = "leader";
+    el.appendChild(leader);
+
+    const textWrap = document.createElement("span");
+    textWrap.dataset.part = "text";
+    el.appendChild(textWrap);
+
     const title = document.createElement("span");
     title.className = classNames.title;
     title.textContent = a.label;
-    el.appendChild(title);
+    textWrap.appendChild(title);
 
     if (a.sublabel && a.kind !== "month") {
       const sub = document.createElement("span");
       sub.className = classNames.sub;
       sub.textContent = a.sublabel;
-      el.appendChild(sub);
+      textWrap.appendChild(sub);
     }
 
     if (onLabelActivate) {
@@ -517,6 +673,53 @@ export function mountAxisLabelElements(
   }
 
   return labels;
+}
+
+/**
+ * A single non-interactive DOM label (dot + leader + text) for a 3D-world
+ * anchor that isn't on the calendar axis — e.g. an alternate-route line's
+ * "Alternate route" tag. Uses the exact same DOM shape as axis labels so it
+ * runs through the same syncAllProjectedLabels collision pass instead of
+ * being a WebGL sprite nothing else can see.
+ */
+export function mountRouteLabelElement(
+  container: HTMLElement,
+  id: string,
+  text: string,
+  world: THREE.Vector3,
+  classNames: { key: string; title: string }
+): ScreenLabel {
+  const el = document.createElement("div");
+  el.className = classNames.key;
+  el.dataset.kind = "route";
+  el.dataset.id = id;
+
+  const dot = document.createElement("span");
+  dot.dataset.part = "dot";
+  el.appendChild(dot);
+
+  const leader = document.createElement("span");
+  leader.dataset.part = "leader";
+  el.appendChild(leader);
+
+  const textWrap = document.createElement("span");
+  textWrap.dataset.part = "text";
+  el.appendChild(textWrap);
+
+  const title = document.createElement("span");
+  title.className = classNames.title;
+  title.textContent = text;
+  textWrap.appendChild(title);
+
+  el.style.visibility = "hidden";
+  container.appendChild(el);
+  return {
+    el,
+    local: world.clone(),
+    world: world.clone(),
+    lastX: -9999,
+    lastY: -9999,
+  };
 }
 
 /** DOM playhead handle projected onto the timeline axis. */

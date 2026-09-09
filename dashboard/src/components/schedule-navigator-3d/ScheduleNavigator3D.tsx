@@ -45,16 +45,18 @@ function formatSlip(days: number | null): string {
 export function ScheduleNavigator3D() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const cardRef = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const axisOverlayRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<JourneyController | null>(null);
   const scrubBodyRef = useRef<HTMLDivElement | null>(null);
   const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
+  const legendRef = useRef<HTMLDivElement | null>(null);
   const isDraggingScrubberRef = useRef(false);
 
   const [data, setData] = useState<ScheduleNavigatorPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NavigatorWaypoint | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<NavigatorWaypoint | null>(null);
   const [clusterItems, setClusterItems] = useState<NavigatorWaypoint[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [takenRoutes, setTakenRoutes] = useState<Set<string>>(new Set());
@@ -134,8 +136,23 @@ export function ScheduleNavigator3D() {
         onClusterSelect: ({ representative, items }) => {
           setClusterItems(items);
           setSelected(representative);
+          setSelectedRoute(null);
           setRecoveryOpen(false);
           setStatus("Delay detail open");
+        },
+        onForecastSelect: (waypoint) => {
+          setClusterItems([]);
+          setSelected(waypoint);
+          setSelectedRoute(null);
+          setRecoveryOpen(false);
+          setStatus("Predicted risk detail open");
+        },
+        onRouteSelect: (waypoint) => {
+          setClusterItems([]);
+          setSelected(null);
+          setSelectedRoute(waypoint);
+          setRecoveryOpen(false);
+          setStatus("Alternate route detail open");
         },
         onSceneReady: () => {
           setBooting(false);
@@ -187,69 +204,26 @@ export function ScheduleNavigator3D() {
   }, [data]);
 
   useEffect(() => {
-    if (!selected || !cardRef.current) return;
+    if ((!selected && !selectedRoute) || !cardRef.current) return;
     gsap.fromTo(
       cardRef.current,
       { autoAlpha: 0, y: 8 },
       { autoAlpha: 1, y: 0, duration: 0.28, ease: "expo.out" }
     );
-  }, [selected?.id, clusterItems.length]);
+  }, [selected?.id, selectedRoute?.id, clusterItems.length]);
 
-  // Anchor the detail card as a popover near the selected shard's projected
-  // screen position. We chose the "track live" scope option: it follows the
-  // shard on orbit / scrub reframe instead of closing on camera movement.
+  // Legend reads top-to-bottom as a short staggered reveal on first render —
+  // motion with a purpose (draws the eye down the key once) rather than a
+  // static list appearing all at once. Visual only; runs once per mount.
   useEffect(() => {
-    if (!selected) return;
-    const controller = controllerRef.current;
-    if (!controller) return;
-    const GAP = 14;
-    const PAD = 10;
-    let raf = 0;
-    let cardW = 0;
-    let cardH = 0;
-    const tick = () => {
-      const el = cardRef.current;
-      const host = hostRef.current;
-      const anchor = controller.getShardScreenAnchor();
-      if (el && host && anchor) {
-        if (cardW <= 0) cardW = el.offsetWidth;
-        if (cardH <= 0) cardH = el.offsetHeight;
-        const hostW = host.clientWidth;
-        const clampedW = Math.min(cardW, Math.max(hostW - PAD * 2, 0));
-        let x = anchor.x - clampedW / 2;
-        x = Math.min(Math.max(x, PAD), Math.max(hostW - clampedW - PAD, PAD));
-        // Flip below the shard when it sits near the top edge of the viewport.
-        const flip = anchor.y - cardH - GAP < PAD;
-        const y = flip ? anchor.y + GAP : anchor.y - cardH - GAP;
-        el.style.left = `${Math.round(x)}px`;
-        el.style.top = `${Math.round(Math.max(y, PAD))}px`;
-        el.style.visibility = anchor.onScreen ? "visible" : "hidden";
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [selected]);
-  // Reroute preview: show the dashed alternate path while a delay shard with
-  // an un-taken catch-up plan is selected; hide it the moment the card is
-  // closed or a route is committed. Nothing is drawn unless previewed here.
-  useEffect(() => {
-    const controller = controllerRef.current;
-    if (!controller) return;
-    const canPreview = Boolean(
-      selected?.catchUpPlan &&
-        selected.catchUpPlan.daysRecovered > 0 &&
-        !takenRoutes.has(selected.id)
+    if (!data || !legendRef.current) return;
+    const items = legendRef.current.querySelectorAll("li");
+    gsap.fromTo(
+      items,
+      { autoAlpha: 0, y: 6 },
+      { autoAlpha: 1, y: 0, duration: 0.32, ease: "power2.out", stagger: 0.06 }
     );
-    if (selected && canPreview) {
-      controller.previewCatchUpPlan(selected.id);
-    } else {
-      controller.clearCatchUpPreview();
-    }
-    return () => {
-      controller.clearCatchUpPreview();
-    };
-  }, [selected, takenRoutes]);
+  }, [data]);
 
   useEffect(() => {
     if (!scrubBodyRef.current || !scrubIso) return;
@@ -293,6 +267,17 @@ export function ScheduleNavigator3D() {
       }));
   }, [data, timelineEffective]);
 
+  const forecastMarkers = useMemo(() => {
+    if (!data || !timelineEffective) return [];
+    return data.waypoints
+      .filter((w) => w.forecastRisk)
+      .map((w) => ({
+        id: w.id,
+        fraction: scrubIsoToFraction(w.plannedEnd, timelineEffective),
+        waypoint: w,
+      }));
+  }, [data, timelineEffective]);
+
   const updateScrubFromPointer = (clientX: number) => {
     const track = scrubberTrackRef.current;
     if (!track || !timelineEffective) return;
@@ -327,16 +312,16 @@ export function ScheduleNavigator3D() {
   };
 
   const onTakeRoute = () => {
-    if (!selected?.catchUpPlan) return;
+    if (!selectedRoute?.catchUpPlan) return;
     setRecoveryOpen(true);
-    const { daysRecovered, daysLost } = selected.catchUpPlan;
+    const { daysRecovered, daysLost } = selectedRoute.catchUpPlan;
     setStatus(
-      `Route taken: recovering ${daysRecovered} of ${daysLost} days at ${selected.taskNameEn}…`
+      `Route taken: recovering ${daysRecovered} of ${daysLost} days at ${selectedRoute.taskNameEn}…`
     );
-    controllerRef.current?.applyCatchUpPlan(selected.id);
+    controllerRef.current?.applyCatchUpPlan(selectedRoute.id);
     setTakenRoutes((prev) => {
       const next = new Set(prev);
-      next.add(selected.id);
+      next.add(selectedRoute.id);
       return next;
     });
   };
@@ -370,10 +355,11 @@ export function ScheduleNavigator3D() {
     ? tagFromDeviationSource(selected.deviationDaysSource)
     : "FORGED";
   const isCluster = clusterItems.length > 1;
+  const isForecast = Boolean(selected?.forecastRisk);
   const hasCatchUp = Boolean(
     selected?.catchUpPlan && selected.catchUpPlan.daysRecovered > 0
   );
-  const routeTaken = Boolean(selected && takenRoutes.has(selected.id));
+  const routeTaken = Boolean(selectedRoute && takenRoutes.has(selectedRoute.id));
   const effectiveDaysBehind = activeDaysBehind ?? summary.daysBehind;
 
   const currentScrubFraction = scrubIsoToFraction(
@@ -546,6 +532,7 @@ export function ScheduleNavigator3D() {
                       className={styles.scrubDelayBtn}
                       onClick={() => {
                         setSelected(w);
+                        setSelectedRoute(null);
                         setClusterItems([]);
                         setRecoveryOpen(false);
                         setStatus("Delay detail open");
@@ -612,136 +599,6 @@ export function ScheduleNavigator3D() {
             </p>
           </div>
 
-          {selected && (
-            <aside className={styles.card} aria-live="polite" ref={cardRef}>
-              <div className={styles.cardHead}>
-                <div>
-                  <h3 className={styles.cardTitle}>
-                    {isCluster
-                      ? `${clusterItems.length} delays in this zone`
-                      : selected.taskNameEn}
-                  </h3>
-                  <p className={styles.cardMeta}>
-                    {isCluster
-                      ? `Focus · ${selected.taskNameEn}`
-                      : `${selected.milestoneClass} · ${selected.taskName}`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className={styles.closeBtn}
-                  aria-label="Close"
-                  onClick={() => {
-                    setSelected(null);
-                    setClusterItems([]);
-                    setRecoveryOpen(false);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-
-              {isCluster && (
-                <ul className={styles.clusterList}>
-                  {[...clusterItems]
-                    .sort(
-                      (a, b) =>
-                        severityRank(b.severity) - severityRank(a.severity) ||
-                        b.localDelayDays - a.localDelayDays
-                    )
-                    .map((w) => (
-                      <li key={w.id}>
-                        <button
-                          type="button"
-                          className={
-                            w.id === selected.id
-                              ? styles.clusterItemActive
-                              : styles.clusterItem
-                          }
-                          onClick={() => {
-                            setSelected(w);
-                            setRecoveryOpen(false);
-                          }}
-                        >
-                          <span>+{w.localDelayDays}d</span>
-                          <span>{w.taskNameEn}</span>
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              )}
-
-              <div className={styles.field}>
-                <p className={styles.fieldLabel}>
-                  Time lost
-                  <ProvenanceBadge tag={timeLostTag} compact />
-                </p>
-                <p className={styles.fieldBody}>
-                  <strong>+{selected.localDelayDays} days</strong>
-                  {" · "}
-                  source <code>{selected.deviationDaysSource}</code>
-                </p>
-              </div>
-
-              <div className={styles.field}>
-                <p className={styles.fieldLabel}>
-                  Reason
-                  <ProvenanceBadge tag="FORGED" compact />
-                </p>
-                <p className={styles.fieldBody}>
-                  {selected.delayReason ??
-                    "No delay reason recorded for this waypoint."}
-                </p>
-              </div>
-
-              {hasCatchUp && selected.catchUpPlan && (
-                <>
-                  <div className={styles.field}>
-                    <p className={styles.fieldLabel}>
-                      Route cost
-                      <ProvenanceBadge tag="FORGED" compact />
-                    </p>
-                    <p className={styles.fieldBody}>
-                      {selected.catchUpPlan.resourceCost}
-                    </p>
-                  </div>
-
-                  <div className={styles.actions}>
-                    <button
-                      type="button"
-                      className={styles.primaryBtn}
-                      onClick={onTakeRoute}
-                      disabled={routeTaken}
-                    >
-                      {routeTaken
-                        ? "Route taken ✓"
-                        : `Take this route (−${selected.catchUpPlan.daysRecovered}d)`}
-                    </button>
-                  </div>
-
-                  {recoveryOpen && (
-                    <div className={styles.recovery}>
-                      <p className={styles.fieldLabel}>
-                        Recovery
-                        <ProvenanceBadge tag="FORGED" compact />
-                      </p>
-                      <p>{selected.catchUpPlan.summary}</p>
-                      <p className={styles.placeholderNote}>
-                        Partial correction only: {selected.catchUpPlan.daysRecovered} of{" "}
-                        {selected.catchUpPlan.daysLost} days recovered (
-                        {Math.round(
-                          (selected.catchUpPlan.daysRecovered /
-                            Math.max(selected.catchUpPlan.daysLost, 1)) *
-                            100
-                        )}
-                        % of this local gap). Other delays keep their own residual.
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-            </aside>
-          )}
         </div>
 
         <div
@@ -855,11 +712,32 @@ export function ScheduleNavigator3D() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelected(m.waypoint);
+                    setSelectedRoute(null);
                     setClusterItems([]);
                     setRecoveryOpen(false);
                     controllerRef.current?.setScrubIso(m.waypoint.plannedEnd);
                   }}
                   aria-label={`Delay: ${m.waypoint.taskNameEn}, +${m.waypoint.localDelayDays} days`}
+                />
+              ))}
+
+              {/* Forecasted-risk shards — predicted, not yet happened */}
+              {forecastMarkers.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={styles.scrubberForecastMark}
+                  style={{ left: `${m.fraction * 100}%` }}
+                  title={`${m.waypoint.taskNameEn} — predicted risk (+${m.waypoint.forecastRisk?.predictedDelayDays}d)`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelected(m.waypoint);
+                    setSelectedRoute(null);
+                    setClusterItems([]);
+                    setRecoveryOpen(false);
+                    controllerRef.current?.setScrubIso(m.waypoint.plannedEnd);
+                  }}
+                  aria-label={`Predicted risk: ${m.waypoint.taskNameEn}, +${m.waypoint.forecastRisk?.predictedDelayDays} days`}
                 />
               ))}
             </div>
@@ -882,7 +760,220 @@ export function ScheduleNavigator3D() {
         </div>
       </div>
 
-      <aside className={styles.legendPanel} aria-label="Scene legend">
+      <aside className={styles.sidePanel} aria-label="Route detail and legend">
+        <div className={styles.routeSection} aria-live="polite" ref={cardRef}>
+          {selectedRoute ? (
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <div>
+                  <h3 className={styles.cardTitle}>Alternate route</h3>
+                  <p className={styles.cardMeta}>
+                    {selectedRoute.milestoneClass} · {selectedRoute.taskNameEn}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={styles.closeBtn}
+                  aria-label="Close"
+                  onClick={() => {
+                    setSelectedRoute(null);
+                    setRecoveryOpen(false);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {selectedRoute.catchUpPlan && (
+                <>
+                  <div className={styles.routeCompare}>
+                    <div className={styles.routeOption}>
+                      <p className={styles.routeOptionLabel}>Current path</p>
+                      <p className={styles.routeOptionMeta}>
+                        {routeTaken ? "Superseded — see ghosted line" : "No change · status quo"}
+                      </p>
+                    </div>
+                    <span className={styles.routeOptionDivider}>vs</span>
+                    <div className={`${styles.routeOption} ${styles.routeOptionSuggested}`}>
+                      <p className={styles.routeOptionLabel}>
+                        {routeTaken ? "Route taken" : "Suggested route"}
+                      </p>
+                      <p className={styles.routeOptionMeta}>
+                        −{selectedRoute.catchUpPlan.daysRecovered}d ·{" "}
+                        {selectedRoute.catchUpPlan.resourceCost}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className={styles.actions}>
+                    <button
+                      type="button"
+                      className={styles.primaryBtn}
+                      onClick={onTakeRoute}
+                      disabled={routeTaken}
+                    >
+                      {routeTaken
+                        ? "Route taken ✓"
+                        : `Take this route (−${selectedRoute.catchUpPlan.daysRecovered}d)`}
+                    </button>
+                  </div>
+
+                  {recoveryOpen && (
+                    <div className={styles.recovery}>
+                      <p className={styles.fieldLabel}>
+                        Recovery
+                        <ProvenanceBadge tag="FORGED" compact />
+                      </p>
+                      <p>{selectedRoute.catchUpPlan.summary}</p>
+                      <p className={styles.placeholderNote}>
+                        Partial correction only: {selectedRoute.catchUpPlan.daysRecovered} of{" "}
+                        {selectedRoute.catchUpPlan.daysLost} days recovered (
+                        {Math.round(
+                          (selectedRoute.catchUpPlan.daysRecovered /
+                            Math.max(selectedRoute.catchUpPlan.daysLost, 1)) *
+                            100
+                        )}
+                        % of this local gap). Other delays keep their own residual.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ) : selected ? (
+            <div className={styles.card}>
+              <div className={styles.cardHead}>
+                <div>
+                  <h3 className={styles.cardTitle}>
+                    {isCluster
+                      ? `${clusterItems.length} delays in this zone`
+                      : selected.taskNameEn}
+                  </h3>
+                  <p className={styles.cardMeta}>
+                    {isCluster
+                      ? `Focus · ${selected.taskNameEn}`
+                      : `${selected.milestoneClass} · ${selected.taskName}`}
+                    {isForecast && (
+                      <span className={styles.forecastTag}>Predicted</span>
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={styles.closeBtn}
+                  aria-label="Close"
+                  onClick={() => {
+                    setSelected(null);
+                    setClusterItems([]);
+                    setRecoveryOpen(false);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {isCluster && (
+                <ul className={styles.clusterList}>
+                  {[...clusterItems]
+                    .sort(
+                      (a, b) =>
+                        severityRank(b.severity) - severityRank(a.severity) ||
+                        b.localDelayDays - a.localDelayDays
+                    )
+                    .map((w) => (
+                      <li key={w.id}>
+                        <button
+                          type="button"
+                          className={
+                            w.id === selected.id
+                              ? styles.clusterItemActive
+                              : styles.clusterItem
+                          }
+                          onClick={() => {
+                            setSelected(w);
+                            setRecoveryOpen(false);
+                          }}
+                        >
+                          <span>+{w.localDelayDays}d</span>
+                          <span>{w.taskNameEn}</span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+
+              <div className={styles.field}>
+                <p className={styles.fieldLabel}>
+                  {isForecast ? "Predicted time lost (if risk occurs)" : "Time lost"}
+                  <ProvenanceBadge tag={isForecast ? "FORGED" : timeLostTag} compact />
+                </p>
+                <p className={styles.fieldBody}>
+                  <strong>
+                    +{isForecast
+                      ? selected.forecastRisk!.predictedDelayDays
+                      : selected.localDelayDays}{" "}
+                    days
+                  </strong>
+                  {isForecast ? (
+                    <>
+                      {" · "}
+                      risk <code>{selected.forecastRisk!.riskLevel}</code>
+                    </>
+                  ) : (
+                    <>
+                      {" · "}
+                      source <code>{selected.deviationDaysSource}</code>
+                    </>
+                  )}
+                </p>
+              </div>
+
+              <div className={styles.field}>
+                <p className={styles.fieldLabel}>
+                  {isForecast ? "Forecast" : "Reason"}
+                  <ProvenanceBadge tag="FORGED" compact />
+                </p>
+                <p className={styles.fieldBody}>
+                  {isForecast
+                    ? selected.forecastRisk!.reason
+                    : (selected.delayReason ??
+                      "No delay reason recorded for this waypoint.")}
+                </p>
+              </div>
+
+              {hasCatchUp && (
+                <p className={styles.placeholderNote}>
+                  An alternate route exists for this delay — click its dashed line
+                  on the path to view cost and take it.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className={styles.routeEmpty}>
+              <p className={styles.routeEmptyTitle}>{data.projectName}</p>
+              <p className={styles.routeEmptyBody}>
+                Click a delay indicator, predicted-risk marker, or an alternate-route
+                line to inspect it here.
+              </p>
+              <dl className={styles.routeEmptyStats}>
+                <div>
+                  <dt>Waypoints</dt>
+                  <dd>{data.waypoints.length}</dd>
+                </div>
+                <div>
+                  <dt>Delays</dt>
+                  <dd>{shardTotal}</dd>
+                </div>
+                <div>
+                  <dt>Clusters</dt>
+                  <dd>{clusterTotal}</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.legendSection} ref={legendRef}>
           <p className={styles.legendTitle}>Legend</p>
           <ul className={styles.legendList}>
             <li>
@@ -895,13 +986,26 @@ export function ScheduleNavigator3D() {
               <i className={styles.swatchProjected} /> Projected (at risk)
             </li>
             <li>
+              <i className={styles.swatchAlternate} /> Alternate route (click to view)
+            </li>
+            <li>
+              <i className={styles.swatchTaken} /> Route taken
+            </li>
+            <li>
+              <i className={styles.swatchGhost} /> Ghosted (superseded route)
+            </li>
+            <li>
               <i className={styles.swatchToday} /> Today
             </li>
             <li>
-              <i className={styles.swatchShard} /> Delay shard
+              <i className={styles.swatchShard} /> Delay indicator
+            </li>
+            <li>
+              <i className={styles.swatchForecast} /> Predicted risk
             </li>
           </ul>
-        </aside>
+        </div>
+      </aside>
       </div>
     </div>
   );

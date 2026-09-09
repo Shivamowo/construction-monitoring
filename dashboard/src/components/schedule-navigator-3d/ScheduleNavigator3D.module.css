@@ -321,10 +321,10 @@
   }
 }
 
-/* —— Stage: scene + legend —— */
+/* —— Stage: scene (left) + docked side panel (right) —— */
 .stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(9.5rem, 11rem);
+  grid-template-columns: minmax(0, 1fr) minmax(18.5rem, 21rem);
   gap: var(--chrome-gap);
   flex: 1;
   min-height: 0;
@@ -483,6 +483,28 @@
   box-shadow: 0 0 8px #ff4d4d;
 }
 
+/* Predicted (not-yet-happened) risk marker — hollow outline, same family as
+   the solid filled .scrubberShardMark used for delays that already occurred. */
+.scrubberForecastMark {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: transparent;
+  border: 1.5px solid #c9843a;
+  box-shadow: 0 0 3px rgba(201, 132, 58, 0.5);
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scrubberForecastMark:hover {
+  transform: translate(-50%, -50%) rotate(45deg) scale(1.4);
+  box-shadow: 0 0 8px #c9843a;
+}
+
 .scrubberThumb {
   position: absolute;
   top: 50%;
@@ -534,13 +556,133 @@
   pointer-events: none;
 }
 
-.legendPanel {
+/* —— Docked side panel: one fixed structural region, two stacked sections —— */
+.sidePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--chrome-gap);
+  min-height: 0;
+}
+
+.routeSection {
+  flex: 1;
+  min-height: 12rem;
+  padding: var(--chrome-pad-y) var(--chrome-pad-x);
+  border-radius: var(--chrome-radius);
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  overflow-y: auto;
+  color: var(--chrome-text);
+}
+
+.routeEmpty {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: center;
+  color: var(--chrome-muted);
+}
+
+.routeEmptyTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--chrome-text);
+}
+
+.routeEmptyBody {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.routeEmptyStats {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  margin: var(--space-2) 0 0;
+}
+
+.routeEmptyStats div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.routeEmptyStats dt {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--chrome-faint);
+}
+
+.routeEmptyStats dd {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--chrome-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Route comparison: current (status quo) vs suggested (cost + recovery) */
+.routeCompare {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.routeOption {
+  padding: var(--space-2) var(--space-3);
+  border-radius: calc(var(--chrome-radius) - 4px);
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg-soft);
+}
+
+.routeOptionSuggested {
+  border-color: var(--chrome-accent-border);
+  background: var(--chrome-accent-bg);
+}
+
+.routeOptionLabel {
+  margin: 0 0 0.15rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--chrome-faint);
+}
+
+.routeOptionSuggested .routeOptionLabel {
+  color: var(--chrome-accent-strong);
+}
+
+.routeOptionMeta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--chrome-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.routeOptionDivider {
+  align-self: center;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--chrome-faint);
+}
+
+.legendSection {
   padding: var(--chrome-pad-y) var(--chrome-pad-x);
   border-radius: var(--chrome-radius);
   border: 1px solid var(--chrome-border);
   background: var(--chrome-bg-soft);
-  align-self: stretch;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
 }
 
 .legendTitle {
@@ -598,6 +740,25 @@
   opacity: 0.9;
 }
 
+.swatchAlternate {
+  width: 1rem;
+  height: 0.16rem;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(90deg,
+      #5f7a4f 0 4px,
+      transparent 4px 7px);
+  opacity: 0.9;
+}
+
+.swatchTaken {
+  width: 1rem;
+  height: 0.34rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: #1a73e8;
+  box-shadow: 0 0 4px rgba(26, 115, 232, 0.5);
+}
+
 .swatchToday {
   width: 0.24rem;
   height: 0.65rem;
@@ -613,6 +774,40 @@
   flex-shrink: 0;
   background: #c62828;
   transform: rotate(15deg);
+}
+
+.swatchForecast {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1.5px solid #c9843a;
+  transform: rotate(15deg);
+}
+
+.swatchGhost {
+  width: 0.65rem;
+  height: 0.14rem;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(90deg,
+      #9a958c 0 4px,
+      transparent 4px 7px);
+  opacity: 0.75;
+}
+
+.forecastTag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 0.06rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid #c9843a;
+  color: #a5651f;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .viewport {
@@ -686,108 +881,163 @@
   overflow: hidden;
 }
 
+/* —— Axis labels: leader-line annotations, not UI-button pills ——
+   Each label is a small dot at its exact anchor, a thin leader line, and
+   text riding at the leader's end. Color-coded per subject so the label
+   reads as "this specific thing" rather than a uniform floating chip. */
 .axisMonth,
 .axisKey {
   position: absolute;
   top: 0;
   left: 0;
   will-change: transform;
+  pointer-events: auto;
+  cursor: pointer;
+  color: #3d3732;
+}
+
+.axisMonth [data-part="dot"],
+.axisKey [data-part="dot"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.axisMonth [data-part="leader"],
+.axisKey [data-part="leader"] {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.axisKey [data-part="leader"] {
+  bottom: 0;
+  height: var(--leader-len, 12px);
+  transform: translateX(-50%);
+}
+
+.axisMonth:not([data-kind="pct"]) [data-part="leader"] {
+  top: 0;
+  height: var(--leader-len, 8px);
+  transform: translateX(-50%);
+}
+
+.axisMonth [data-part="text"],
+.axisKey [data-part="text"] {
+  position: absolute;
+  left: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1);
+  gap: 1px;
   white-space: nowrap;
-  padding: var(--space-1) var(--space-2);
-  border-radius: 999px;
-  background: rgba(8, 12, 18, 0.88);
-  backdrop-filter: blur(12px) saturate(1.15);
-  -webkit-backdrop-filter: blur(12px) saturate(1.15);
-  border: 1px solid rgba(244, 247, 251, 0.22);
-  box-shadow:
-    0 2px 14px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(0, 0, 0, 0.25);
-  text-shadow: none;
-  color: #f4f7fb;
-  pointer-events: auto;
-  cursor: pointer;
-  transition:
-    border-color var(--ease-ui),
-    background var(--ease-ui),
-    box-shadow var(--ease-ui),
-    transform var(--ease-ui);
+  transform: translateX(-50%);
+  /* Solid-enough plate so a label is never partially obscured by a line,
+     another label, or the scene behind it — lighter than the old pill but
+     never fully transparent. */
+  background: rgba(247, 243, 236, 0.86);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border-radius: 4px;
+  padding: 1px 5px;
+  box-shadow: 0 1px 3px rgba(36, 48, 65, 0.14);
+  transition: color var(--ease-ui);
 }
 
-.axisMonth:hover,
-.axisKey:hover {
-  border-color: rgba(244, 247, 251, 0.4);
-  background: rgba(14, 22, 32, 0.94);
-  box-shadow:
-    0 2px 16px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(91, 127, 154, 0.25);
-  transform: translateY(-1px);
+.axisKey [data-part="text"] {
+  bottom: calc(var(--leader-len, 12px) + 3px);
 }
 
-.axisMonth:active,
-.axisKey:active {
-  transform: translateY(0);
+.axisMonth:not([data-kind="pct"]) [data-part="text"] {
+  top: calc(var(--leader-len, 8px) + 3px);
 }
 
-.axisMonth {
-  color: rgba(232, 240, 248, 0.92);
-  font-size: 0.7rem;
-  letter-spacing: 0.03em;
-  font-weight: 600;
-  padding: var(--space-1) var(--space-2);
-  background: rgba(8, 12, 18, 0.78);
-  border-color: rgba(244, 247, 251, 0.14);
+/* % axis labels sit beside the vertical rail — leader runs horizontally. */
+.axisMonth[data-kind="pct"] [data-part="leader"] {
+  top: 0;
+  left: auto;
+  right: 0;
+  width: var(--leader-len, 10px);
+  height: 1px;
+  transform: translateY(-50%);
 }
 
-.axisKey {
-  color: #f4f7fb;
-  padding: var(--space-1) var(--space-3);
+.axisMonth[data-kind="pct"] [data-part="text"] {
+  left: auto;
+  right: calc(var(--leader-len, 10px) + 5px);
+  top: 0;
+  align-items: flex-end;
+  transform: translateY(-50%);
+}
+
+.axisMonth:hover [data-part="text"],
+.axisKey:hover [data-part="text"] {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Color-coding per subject — matches each label's own line/marker color. */
+.axisKey[data-kind="plannedEnd"] {
+  color: #3a5b7e;
+}
+
+.axisKey[data-kind="projectedEnd"] {
+  color: #bf5b3f;
+}
+
+.axisKey[data-kind="projectedEnd"][data-route-taken="true"] {
+  color: #1a73e8;
+}
+
+/* Alternate-route DOM label — sage to match the dashed route line; purely
+   informational, so it never intercepts clicks meant for the line beneath. */
+.axisKey[data-kind="route"] {
+  color: #5f7a4f;
+  pointer-events: none;
+  cursor: default;
 }
 
 .axisToday {
-  color: #f7f1e4;
-  border-color: rgba(232, 220, 192, 0.55);
-  background: rgba(18, 16, 12, 0.9);
-  box-shadow:
-    0 2px 16px rgba(0, 0, 0, 0.55),
-    0 0 18px rgba(196, 165, 116, 0.22);
+  color: #2b2824;
 }
 
-.axisToday:hover {
-  border-color: rgba(242, 235, 224, 0.7);
-  background: rgba(24, 20, 14, 0.95);
+.axisToday [data-part="dot"],
+.axisToday [data-part="leader"] {
+  color: #8b9a6e;
 }
 
 .axisTitle {
   font-family: var(--font-display);
-  font-weight: 750;
-  font-size: 0.74rem;
-  letter-spacing: 0.05em;
+  font-weight: 650;
+  font-size: 0.66rem;
+  letter-spacing: 0.035em;
   text-transform: uppercase;
-  line-height: 1.15;
+  line-height: 1.1;
 }
 
 .axisMonth .axisTitle {
   font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 0.68rem;
+  font-weight: 550;
+  font-size: 0.64rem;
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .axisSub {
-  font-size: 0.68rem;
-  color: rgba(210, 222, 234, 0.92);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 0.64rem;
+  font-weight: 550;
+  color: inherit;
+  opacity: 0.8;
   font-variant-numeric: tabular-nums;
-}
-
-.axisToday .axisSub {
-  color: rgba(242, 235, 224, 0.95);
 }
 
 /* Scrub playhead — drag handle on the calendar axis */
@@ -924,6 +1174,12 @@
 
 .status {
   margin: 0;
+  /* Long catch-up/status messages must truncate, not silently clip off the
+     top edge of a short viewport (.hud is bottom-anchored with no height cap). */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .loading,
@@ -944,29 +1200,11 @@
   border-color: rgba(180, 58, 42, 0.35);
 }
 
-/* Delay detail card — compact popover anchored near the clicked shard.
-   Position is set live from the shard's projected screen point (left/top in
-   dev px) so it follows the subject instead of parking in a fixed corner. */
+/* Route detail content — lives inside the docked .routeSection (static flow,
+   not a floating popover). The section itself is always mounted; only this
+   inner content switches between the empty state and a selection. */
 .card {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: min(15.5rem, calc(100% - 2rem));
-  padding: var(--chrome-pad-y) var(--chrome-pad-x);
-  border-radius: calc(var(--chrome-radius) - 4px);
-  background: var(--chrome-bg);
-  border: 1px solid var(--chrome-border-strong);
-  box-shadow:
-    0 14px 34px rgba(36, 48, 65, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(16px) saturate(1.15);
-  color: var(--chrome-text);
-  z-index: 6;
-  max-height: calc(100% - 2rem);
-  overflow: auto;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: auto;
+  width: 100%;
 }
 
 .cardHead {
@@ -981,7 +1219,7 @@
   margin: 0;
   font-family: var(--font-display);
   font-weight: 750;
-  font-size: 1.05rem;
+  font-size: clamp(0.95rem, 0.88rem + 0.35vw, 1.15rem);
   letter-spacing: -0.02em;
   line-height: 1.15;
   color: var(--chrome-text);

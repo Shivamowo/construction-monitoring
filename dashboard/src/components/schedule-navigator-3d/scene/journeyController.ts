@@ -26,14 +26,14 @@ import {
   createActualTube,
   createClusterShard,
   createForecastShard,
+  createGhostRouteLine,
   createOrUpdateProjectedTube,
+  createOrUpdateTakenRouteTube,
   createPlannedTube,
   createProjectedDashLine,
-  createRoutePreviewLabel,
   createRoutePreviewLine,
   createTodayMarker,
   updateProjectedDashLine,
-  updateRoutePreviewLine,
 } from "./pathMeshes";
 import {
   buildAxisAnchors,
@@ -47,10 +47,10 @@ import {
   monthlyTickMs,
   mountAxisLabelElements,
   mountPctLabelElements,
+  mountRouteLabelElement,
   pctToY,
-  syncPctLabels,
+  syncAllProjectedLabels,
   syncPlayheadLabel,
-  syncProjectedLabels,
   updateLabelWorldFromRoot,
   type ScreenLabel,
 } from "./timelineAxis";
@@ -91,6 +91,8 @@ export interface JourneyCallbacks {
   onClusterSelect: (payload: ClusterSelectPayload) => void;
   /** Fired when a predicted-risk (forecast) shard on the projected line is clicked. */
   onForecastSelect?: (waypoint: NavigatorWaypoint) => void;
+  /** Fired when an alternate-route line (not the delay indicator) is clicked. */
+  onRouteSelect?: (waypoint: NavigatorWaypoint) => void;
   onSceneReady?: () => void;
   onCatchUpComplete?: (payload: {
     waypointId: string;
@@ -123,11 +125,7 @@ export interface JourneyControllerOptions {
 export interface JourneyController {
   setSize: (width: number, height: number) => void;
   dispose: () => void;
-  /** Show a dashed alternate-route preview branching from the shard — not committed. */
-  previewCatchUpPlan: (waypointId: string) => void;
-  /** Hide the current reroute preview without committing anything. */
-  clearCatchUpPreview: () => void;
-  /** Commit the previewed route: morph the real projected path onto it. */
+  /** Commit an alternate route: morph the real projected path onto it. */
   applyCatchUpPlan: (waypointId: string) => void;
   resetCatchUpPlan: () => void;
   /** Dolly the camera toward/away from its current target, clamped. */
@@ -239,12 +237,14 @@ export function createJourneyController(
   const projectedDash = createProjectedDashLine(model.projectedCurve);
   root.add(projectedDash);
 
-  // Reroute preview — hidden until a delay shard with a catch-up plan is
-  // selected; never committed until "Take this route" is clicked. A small
-  // "Suggested route" label rides along with it so the dashed line reads as
-  // a suggestion, not something already taken.
-  let routePreview: THREE.Line | null = null;
-  let routePreviewLabel: THREE.Sprite | null = null;
+  // Ghosts of superseded projected-path states, one per commit, never removed.
+  const ghostLines: THREE.Line[] = [];
+
+  // Once any route is taken, the entire forward path becomes the confident
+  // "confirmed" blue tube instead of the amber "at risk" one — rebuilt in
+  // place on every subsequent commit (including compounding morphs).
+  let takenMesh: THREE.Mesh | null = null;
+  let routeTakenActive = false;
 
   const todayMarker = createTodayMarker(model.todayPosition, model.todayTangent);
   todayMarker.scale.setScalar(0.97);
@@ -391,6 +391,10 @@ export function createJourneyController(
     options.axisClassNames.month
   );
 
+  // One combined array so month/key/% labels all collision-avoid each other
+  // uniformly (see syncAllProjectedLabels) instead of two blind, unaware systems.
+  const allProjectedLabels: ScreenLabel[] = [...screenLabels, ...pctLabels];
+
   // Axis endpoints in local space for drag → date mapping
   const axisStartLocal = new THREE.Vector3(0, scale.axisY + 0.55, scale.axisZ);
   const axisEndLocal = new THREE.Vector3(
@@ -534,11 +538,18 @@ export function createJourneyController(
 
   function rebuildProjectedFromControls() {
     model.projectedCurve = rebuildProjectedCurve(model.projectedControlPoints);
-    projectedMesh = createOrUpdateProjectedTube(
-      model.projectedCurve,
-      projectedMesh
-    );
-    updateProjectedDashLine(projectedDash, model.projectedCurve);
+    if (routeTakenActive) {
+      takenMesh = createOrUpdateTakenRouteTube(model.projectedCurve, takenMesh);
+      if (!takenMesh.parent) root.add(takenMesh);
+      projectedMesh.visible = false;
+      projectedDash.visible = false;
+    } else {
+      projectedMesh = createOrUpdateProjectedTube(
+        model.projectedCurve,
+        projectedMesh
+      );
+      updateProjectedDashLine(projectedDash, model.projectedCurve);
+    }
   }
 
   function findClusterIndexFromObject(obj: THREE.Object3D): number {
@@ -580,8 +591,18 @@ export function createJourneyController(
     forecastGroups.forEach((g) => {
       if (g.visible) g.traverse((o) => targets.push(o));
     });
+    alternateRoutes.forEach((a) => {
+      if (a.line.visible) targets.push(a.line);
+    });
     const hits = raycaster.intersectObjects(targets, false);
     if (hits.length === 0) return;
+
+    const routeEntry = findAlternateRouteFromObject(hits[0].object);
+    if (routeEntry) {
+      const wp = model.waypoints.find((w) => w.id === routeEntry.waypointId);
+      if (wp) callbacks.onRouteSelect?.(wp);
+      return;
+    }
 
     const forecastIndex = findForecastIndexFromObject(hits[0].object);
     if (forecastIndex >= 0) {
@@ -614,12 +635,18 @@ export function createJourneyController(
     const targets: THREE.Object3D[] = [];
     clusterGroups.forEach((g) => g.traverse((o) => targets.push(o)));
     forecastGroups.forEach((g) => g.traverse((o) => targets.push(o)));
+    alternateRoutes.forEach((a) => {
+      if (a.line.visible) targets.push(a.line);
+    });
     const hits = raycaster.intersectObjects(targets, false);
     const hitObj = hits.length > 0 ? hits[0].object : null;
     hoveredClusterIndex = hitObj ? findClusterIndexFromObject(hitObj) : -1;
     hoveredForecastIndex = hitObj ? findForecastIndexFromObject(hitObj) : -1;
+    const hoveredRoute = hitObj ? findAlternateRouteFromObject(hitObj) : null;
     canvas.style.cursor =
-      hoveredClusterIndex >= 0 || hoveredForecastIndex >= 0 ? "pointer" : "grab";
+      hoveredClusterIndex >= 0 || hoveredForecastIndex >= 0 || hoveredRoute
+        ? "pointer"
+        : "grab";
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);
@@ -678,11 +705,8 @@ export function createJourneyController(
       }
     });
 
-    updateLabelWorldFromRoot(screenLabels, root);
-    syncProjectedLabels(screenLabels, camera, viewW, viewH);
-
-    updateLabelWorldFromRoot(pctLabels, root);
-    syncPctLabels(pctLabels, camera, viewW, viewH);
+    updateLabelWorldFromRoot(allProjectedLabels, root);
+    syncAllProjectedLabels(allProjectedLabels, camera, viewW, viewH);
 
     playheadDom.local.set(
       dateToX(scrubIso, scale),
@@ -882,80 +906,94 @@ export function createJourneyController(
   applyScrubVisuals(scrubIso);
   callbacks.onScrubChange?.(scrubIso);
 
-  function clearCatchUpPreview() {
-    if (routePreview) routePreview.visible = false;
-    if (routePreviewLabel) routePreviewLabel.visible = false;
+  /**
+   * Alternate-route lines: one persistent, independently clickable object
+   * per delay that has a catch-up plan — built once at scene setup, always
+   * visible (not conditional on selecting the delay indicator first). Taking
+   * a route hides that specific line (it becomes the committed path instead).
+   */
+  interface AlternateRouteEntry {
+    waypointId: string;
+    line: THREE.Line;
+    label: ScreenLabel;
   }
+  const alternateRoutes: AlternateRouteEntry[] = [];
 
-  function previewCatchUpPlan(waypointId: string) {
+  function buildAlternateRoutePoints(waypointId: string): THREE.Vector3[] | null {
     const wp = model.waypoints.find((w) => w.id === waypointId);
     const daysRecovered = recoveryDaysForWaypoint(wp);
-    if (!wp || daysRecovered <= 0) {
-      clearCatchUpPreview();
-      return;
-    }
+    if (!wp || daysRecovered <= 0) return null;
     const shard =
       model.shards.find((s) => s.waypoint.id === waypointId) ??
       model.forecastShards.find((s) => s.waypoint.id === waypointId);
     const shardPosition = shard?.position ?? model.todayPosition;
-
-    const tentative = { ...appliedRecoveries, [waypointId]: daysRecovered };
     const targets = buildCatchUpProjectedControls(
       model.waypoints,
       model.timeline,
       model.todayIso,
       model.todayPosition,
-      tentative
+      { [waypointId]: daysRecovered }
     );
-    if (!targets || targets.length < 2) {
-      clearCatchUpPreview();
-      return;
-    }
+    if (!targets || targets.length < 2) return null;
+    return buildRoutePreviewPoints(shardPosition, targets);
+  }
 
-    const previewPoints = buildRoutePreviewPoints(shardPosition, targets);
-    const midPoint = previewPoints[Math.floor(previewPoints.length / 2)]
+  const planBearingIds = [
+    ...model.shards.map((s) => s.waypoint.id),
+    ...model.forecastShards.map((s) => s.waypoint.id),
+  ].filter((id) => recoveryDaysForWaypoint(model.waypoints.find((w) => w.id === id)) > 0);
+
+  for (const waypointId of planBearingIds) {
+    const points = buildAlternateRoutePoints(waypointId);
+    if (!points) continue;
+    const line = createRoutePreviewLine(points);
+    line.userData.kind = "alternate-route";
+    line.userData.waypointId = waypointId;
+    root.add(line);
+
+    const midPoint = points[Math.floor(points.length / 2)]
       .clone()
       .add(new THREE.Vector3(0, 0.42, 0));
-
-    const isNew = !routePreview;
-    if (!routePreview) {
-      routePreview = createRoutePreviewLine(previewPoints);
-      root.add(routePreview);
-    } else {
-      updateRoutePreviewLine(routePreview, previewPoints);
-      routePreview.visible = true;
-    }
-    // Suggestion, not an action already taken — a distinct dash-in entrance,
-    // separate from the card's own "expo.out" entrance.
-    const lineMat = routePreview.material as THREE.LineDashedMaterial;
-    gsap.killTweensOf(lineMat);
-    gsap.fromTo(
-      lineMat,
-      { opacity: 0 },
-      { opacity: 0.85, duration: isNew ? 0.5 : 0.35, ease: "power2.out" }
+    // DOM label (not a WebGL sprite) so it runs through the SAME
+    // syncAllProjectedLabels collision pass as every date/axis label —
+    // a separate sprite-based label was the root cause of the undetected
+    // "ALTERNATE ROUTE" overlap (two unrelated systems, neither aware of
+    // the other's occupied screen space).
+    const label = mountRouteLabelElement(
+      options.axisOverlay,
+      waypointId,
+      "Alternate route",
+      midPoint,
+      { key: options.axisClassNames.key, title: options.axisClassNames.title }
     );
+    allProjectedLabels.push(label);
 
-    if (!routePreviewLabel) {
-      routePreviewLabel = createRoutePreviewLabel("Suggested route");
-      root.add(routePreviewLabel);
+    alternateRoutes.push({ waypointId, line, label });
+  }
+
+  // Wider hit-test threshold so thin lines are practical raycast targets.
+  raycaster.params.Line = { threshold: 0.18 };
+
+  function findAlternateRouteFromObject(obj: THREE.Object3D): AlternateRouteEntry | null {
+    return alternateRoutes.find((a) => a.line === obj) ?? null;
+  }
+
+  function hideAlternateRoute(waypointId: string) {
+    const entry = alternateRoutes.find((a) => a.waypointId === waypointId);
+    if (entry) {
+      entry.line.visible = false;
+      // Remove from the DOM and from the shared collision array — otherwise
+      // syncAllProjectedLabels keeps re-showing it (it only hides labels
+      // that fall off-screen, not ones a caller wants gone for good).
+      entry.label.el.remove();
+      const idx = allProjectedLabels.indexOf(entry.label);
+      if (idx >= 0) allProjectedLabels.splice(idx, 1);
     }
-    routePreviewLabel.position.copy(midPoint);
-    routePreviewLabel.visible = true;
-    gsap.killTweensOf(routePreviewLabel.scale);
-    routePreviewLabel.scale.set(0.001, 0.001, 0.001);
-    gsap.to(routePreviewLabel.scale, {
-      x: 1.7,
-      y: 1.7 * (128 / 512),
-      z: 1,
-      duration: 0.45,
-      delay: 0.1,
-      ease: EASE.pop,
-    });
   }
 
   function applyCatchUpPlan(waypointId: string) {
     if (morphing) return;
-    clearCatchUpPreview();
+    hideAlternateRoute(waypointId);
     const wp = model.waypoints.find((w) => w.id === waypointId);
     const daysRecovered = recoveryDaysForWaypoint(wp);
     if (!wp || daysRecovered <= 0) {
@@ -971,6 +1009,17 @@ export function createJourneyController(
       });
       return;
     }
+
+    // Ghost the CURRENT projected path — as it existed right before this
+    // commit — before mutating anything. Persists forever; each subsequent
+    // commit ghosts its own pre-commit state independently, so earlier
+    // ghosts are never lost or overwritten.
+    const ghostCurve = rebuildProjectedCurve(
+      model.projectedControlPoints.map((p) => p.clone())
+    );
+    const ghostLine = createGhostRouteLine(ghostCurve);
+    root.add(ghostLine);
+    ghostLines.push(ghostLine);
 
     // Compound with any previously applied plans (steel unresolved stays full).
     appliedRecoveries[waypointId] = daysRecovered;
@@ -1056,10 +1105,13 @@ export function createJourneyController(
         for (let i = 0; i < targets.length; i++) {
           model.projectedControlPoints[i].copy(targets[i]);
         }
+        // Lands settled in confident blue, not mid-morph amber.
+        routeTakenActive = true;
         rebuildProjectedFromControls();
 
         if (projectedLabel) {
           projectedLabel.el.dataset.iso = newProjectedEndIso;
+          projectedLabel.el.dataset.routeTaken = "true";
           const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
           if (sub) sub.textContent = formatDay(newProjectedEndIso);
           projectedLabel.local.x = targetTickX;
@@ -1084,7 +1136,6 @@ export function createJourneyController(
   }
 
   function resetCatchUpPlan() {
-    clearCatchUpPreview();
     morphing = false;
     for (const k of Object.keys(appliedRecoveries)) {
       delete appliedRecoveries[k];
@@ -1174,8 +1225,6 @@ export function createJourneyController(
   return {
     setSize,
     dispose,
-    previewCatchUpPlan,
-    clearCatchUpPreview,
     applyCatchUpPlan,
     resetCatchUpPlan,
     zoomIn: () => dollyBy(0.82),
