@@ -28,6 +28,9 @@
   --chrome-accent-bg-hover: rgba(139, 154, 110, 0.24);
   --chrome-accent-border: rgba(95, 122, 79, 0.45);
   --chrome-accent-border-strong: rgba(95, 122, 79, 0.75);
+  /* Route-preview line gray — distinct token from --chrome-accent (button/CTA
+     chrome) even though today's chrome-accent sage predates this palette. */
+  --route-alt: #8f887c;
   --ease-ui: 0.28s cubic-bezier(0.33, 1, 0.68, 1);
   /* ≈ power2.out */
 
@@ -826,7 +829,7 @@
   width: 1rem;
   height: 0.16rem;
   flex-shrink: 0;
-  background: #8f887c;
+  background: var(--route-alt);
   opacity: 0.6;
 }
 
@@ -1150,7 +1153,7 @@
    purely informational, so it never intercepts clicks meant for the line
    beneath. */
 .axisKey[data-kind="route"] {
-  color: #8f887c;
+  color: var(--route-alt);
   pointer-events: none;
   cursor: default;
 }

@@ -50,6 +50,12 @@ Last updated: 2026-09-11
 
 ## Task history
 
+### 2026-09-11 — Route-line recolor: add dedicated `--route-alt` token
+
+- Follow-up to the same-day route recolor below: added a dedicated `--route-alt: #8f887c;` CSS var (distinct from `--chrome-accent`, which stays button/CTA-only) and repointed `.swatchAlternate` background and `.axisKey[data-kind="route"]` color to it instead of the bare hex.
+- All palette values (planned graphite, actual teal, projected amber, alternate gray, taken blue, ghost @0.2 opacity) were already correct from the prior pass — verified unchanged, not re-applied.
+- **Verification:** `tsc --noEmit` clean; `npm run build` clean. Headless Chrome at `http://localhost:3001/` (3D Navigator lives at `/`, not `/dev/schedule-navigator-3d` — that dev route was retired 2026-09-09): HTTP 200, 0 console errors. `getComputedStyle` confirms all 5 legend swatches still resolve to their exact target hex through the new var. Filter-chip "All" active state still resolves to `rgb(95, 122, 79)` (`--chrome-accent`, untouched).
+
 ### 2026-09-11 — Route-line recolor: zero hue collisions
 
 - Fixed two green/teal collision + legend-drift bugs in `schedule-navigator-3d`, confirmed by direct source read before changing anything.
