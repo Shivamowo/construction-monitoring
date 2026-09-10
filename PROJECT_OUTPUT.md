@@ -50,6 +50,18 @@ Last updated: 2026-09-11
 
 ## Task history
 
+### 2026-09-11 — Route/delay card: re-anchor to scene, boost cost-block hierarchy
+
+- Confirmed diagnosis: the card rendered inside a fixed `<aside>`, disconnected from the clicked route/shard's scene location, with no pointer/leader line. `getShardScreenAnchor()` existed on the controller but nothing called it.
+- Added `getRouteScreenAnchor(waypointId)` to the controller (`journeyController.ts`) — projects an alternate-route's midpoint (same point its DOM label anchors to, lift included) to screen space, mirroring `getShardScreenAnchor`. Factored the shared NDC-to-pixel projection into one `projectLocalToScreen` helper used by both.
+- `ScheduleNavigator3D.tsx`: added a `requestAnimationFrame` loop keyed on `selected`/`selectedRoute` that polls the appropriate anchor getter every frame and converts it into page-fixed coordinates via the host container's bounding rect. The card (`.routeSection`) is now `position: fixed`, positioned via inline style from that live anchor (clamped on-screen with a fixed offset so it doesn't sit on top of the shard/route geometry), and fades to `opacity: 0` when the anchor reports off-screen. Same mechanism drives both the alternate-route card and the delay/forecast card — one code path, no branching.
+- Added an SVG leader line + dot (`.leaderLineSvg`/`.leaderLine`/`.leaderDot`) from the anchor point to the card's near edge, redrawn every frame alongside the card.
+- The `<aside>` now holds only the Legend; the card moved out of the docked side-panel flow entirely into the floating popover. Updated the stale `.card` comment that explicitly said "not a floating popover" (that was the box this patch reversed).
+- Hierarchy boost: `.routeOptionSuggested` (the cost/consequence block — "−6d · +2 concrete crews...") gets a stronger border, background, shadow, and a bumped `.routeOptionMeta` font-size/weight so the number reads as the focal point; `.routeOption` (current path / no-change baseline) goes borderless, quieter, lower opacity. Same treatment applied to the delay/forecast card's `.fieldBody strong` ("+N days" figure) — bumped from `1.15rem` to `1.45rem`/`750` weight — which is a CSS-only, non-ambiguous target since it's the only `<strong>` inside that class in the whole component.
+- **Logged but explicitly not implemented this pass** (per instruction): delay shards fully clearing on a taken route, rather than leaving residual risk, is a data/behavior change tracked as backlog, not touched here.
+
+**Verification:** `tsc --noEmit` clean; `npm run build` clean. Real headless Chrome at `http://localhost:3001/`: HTTP 200, 0 console/page errors. Grid-scan click test found and clicked an alternate-route tube; confirmed via `getComputedStyle` that the leader-line SVG mounted with `opacity: 1`, its `<line>` carried real anchor coordinates, and the card's computed `position` was `fixed` with `left`/`top` matching the anchor plus the expected offset. Simulated a camera-orbit drag (mousedown/move/up on the canvas) and re-read the leader line's coordinates afterward — they moved, confirming the anchor is live-tracked every frame rather than fixed at click time.
+
 ### 2026-09-11 — Alternate-route preview: fix geometric overlap with current path
 
 - Cause confirmed as described: `createRoutePreviewLine` only offset the preview by `position.y += 0.03` — fine for the old hairline `Line`, not enough clearance for a `0.075`-radius tube running near the `0.1`-radius taken-route tube or `0.085`-radius actual tube. Meshes could intersect/clip wherever the curves ran close.

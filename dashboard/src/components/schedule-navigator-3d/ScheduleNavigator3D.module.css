@@ -641,7 +641,7 @@
   pointer-events: none;
 }
 
-/* —— Docked side panel: one fixed structural region, two stacked sections —— */
+/* —— Side panel: legend only now — the detail card floats instead —— */
 .sidePanel {
   display: flex;
   flex-direction: column;
@@ -649,16 +649,43 @@
   min-height: 0;
 }
 
+/* Floating popover anchored to the clicked shard/route (position: fixed,
+ * positioned via inline style in ScheduleNavigator3D.tsx each frame — see
+ * cardAnchor). Transitions opacity when it goes off-screen or the anchor is
+ * momentarily unavailable, rather than popping. */
 .routeSection {
-  flex: 1;
-  min-height: 12rem;
+  z-index: 40;
+  max-height: min(28rem, calc(100vh - 2 * var(--chrome-pad-y) - 24px));
   padding: var(--chrome-pad-y) var(--chrome-pad-x);
   border-radius: var(--chrome-radius);
   border: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 12px 32px rgba(36, 48, 65, 0.22);
   overflow-y: auto;
   color: var(--chrome-text);
+  transition: opacity var(--ease-ui);
+}
+
+.leaderLineSvg {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 39;
+  transition: opacity var(--ease-ui);
+}
+
+.leaderLine {
+  stroke: var(--chrome-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.leaderDot {
+  fill: var(--chrome-accent);
 }
 
 .routeEmpty {
@@ -721,16 +748,24 @@
   margin: var(--space-3) 0;
 }
 
+/* Quiet baseline — the non-action, not a competing option. */
 .routeOption {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border-radius: calc(var(--chrome-radius) - 4px);
-  border: 1px solid var(--chrome-border);
-  background: var(--chrome-bg-soft);
+  border: none;
+  background: transparent;
+  opacity: 0.7;
 }
 
+/* Dominant element — the actual decision (cost/consequence), boosted to
+ * read as the card's focal point rather than sitting at the same visual
+ * weight as the do-nothing baseline above. */
 .routeOptionSuggested {
-  border-color: var(--chrome-accent-border);
+  padding: var(--space-3);
+  border: 1.5px solid var(--chrome-accent-border-strong);
   background: var(--chrome-accent-bg);
+  box-shadow: 0 2px 8px rgba(95, 122, 79, 0.18);
+  opacity: 1;
 }
 
 .routeOptionLabel {
@@ -744,6 +779,7 @@
 
 .routeOptionSuggested .routeOptionLabel {
   color: var(--chrome-accent-strong);
+  font-size: 0.7rem;
 }
 
 .routeOptionMeta {
@@ -751,6 +787,12 @@
   font-size: 0.82rem;
   color: var(--chrome-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.routeOptionSuggested .routeOptionMeta {
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: var(--chrome-text);
 }
 
 .routeOptionDivider {
@@ -1352,9 +1394,11 @@
   border-color: rgba(180, 58, 42, 0.35);
 }
 
-/* Route detail content — lives inside the docked .routeSection (static flow,
-   not a floating popover). The section itself is always mounted; only this
-   inner content switches between the empty state and a selection. */
+/* Route detail content — .routeSection is now a floating popover anchored
+ * to the clicked shard/route's live screen position (position: fixed,
+ * positioned inline via JS each frame — see cardAnchor in
+ * ScheduleNavigator3D.tsx), connected to its subject by an SVG leader line.
+ * It only mounts once an anchor position is known. */
 .card {
   width: 100%;
 }
@@ -1429,10 +1473,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Dominant element in the delay/forecast card — the "+N days" figure —
+ * boosted the same way .routeOptionSuggested is boosted in the route card,
+ * so it reads as the focal point rather than flat body text. */
 .fieldBody strong {
+  display: inline-block;
   color: var(--chrome-text);
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.45rem;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
 

@@ -157,6 +157,14 @@ export interface JourneyController {
    * detail card as a popover near its subject instead of a fixed corner panel.
    */
   getShardScreenAnchor: () => { x: number; y: number; onScreen: boolean } | null;
+  /**
+   * Project a given alternate-route's midpoint (the same point its DOM
+   * label anchors to) to screen space, for popover anchoring — same purpose
+   * as getShardScreenAnchor but for the route-preview card.
+   */
+  getRouteScreenAnchor: (
+    waypointId: string
+  ) => { x: number; y: number; onScreen: boolean } | null;
   shardCount: number;
   clusterCount: number;
   todayWaypointIndex: number;
@@ -1187,6 +1195,22 @@ export function createJourneyController(
   // Wider hit-test threshold so thin lines are practical raycast targets.
   raycaster.params.Line = { threshold: 0.18 };
 
+  /** Project a local-space point (relative to `root`) to viewport pixels. */
+  function projectLocalToScreen(
+    localPos: THREE.Vector3
+  ): { x: number; y: number; onScreen: boolean } {
+    root.updateMatrixWorld(true);
+    const world = new THREE.Vector3();
+    world.copy(localPos).applyMatrix4(root.matrixWorld);
+    const ndc = world.project(camera);
+    const behind = ndc.z > 1;
+    const x = Math.round((ndc.x * 0.5 + 0.5) * viewW);
+    const y = Math.round((-ndc.y * 0.5 + 0.5) * viewH);
+    const onScreen =
+      !behind && x >= -80 && x <= viewW + 80 && y >= -80 && y <= viewH + 80;
+    return { x, y, onScreen };
+  }
+
   function findAlternateRouteFromObject(obj: THREE.Object3D): AlternateRouteEntry | null {
     return alternateRoutes.find((a) => a.line === obj) ?? null;
   }
@@ -1515,16 +1539,15 @@ export function createJourneyController(
             ? forecastGroups[selectedForecastIndex]?.position
             : null;
       if (!anchorPos) return null;
-      root.updateMatrixWorld(true);
-      const world = new THREE.Vector3();
-      world.copy(anchorPos).applyMatrix4(root.matrixWorld);
-      const ndc = world.project(camera);
-      const behind = ndc.z > 1;
-      const x = Math.round((ndc.x * 0.5 + 0.5) * viewW);
-      const y = Math.round((-ndc.y * 0.5 + 0.5) * viewH);
-      const onScreen =
-        !behind && x >= -80 && x <= viewW + 80 && y >= -80 && y <= viewH + 80;
-      return { x, y, onScreen };
+      return projectLocalToScreen(anchorPos);
+    },
+    getRouteScreenAnchor: (waypointId: string) => {
+      const entry = alternateRoutes.find((a) => a.waypointId === waypointId);
+      if (!entry || !entry.line.visible || !entry.points.length) return null;
+      const midIndex = Math.floor(entry.points.length / 2);
+      const anchorPos = entry.points[midIndex].clone();
+      anchorPos.y += routePreviewLiftAt(entry.points, midIndex);
+      return projectLocalToScreen(anchorPos);
     },
     shardCount: model.shards.length,
     clusterCount: model.clusters.length,

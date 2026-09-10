@@ -43,6 +43,34 @@ function routeScore(waypoint: NavigatorWaypoint): number {
   return plan.daysRecovered / costBurden;
 }
 
+const FLOATING_CARD_WIDTH = 300;
+const FLOATING_CARD_OFFSET_X = 26;
+const FLOATING_CARD_OFFSET_Y = -60;
+const FLOATING_CARD_EST_HEIGHT = 320;
+const VIEWPORT_MARGIN = 12;
+
+/** Clamp the floating card's top-left to stay fully on-screen while still
+ * favoring a position near (offset from) the anchor point. */
+function clampCardPosition(anchorX: number, anchorY: number) {
+  const maxLeft =
+    (typeof window !== "undefined" ? window.innerWidth : 1200) -
+    FLOATING_CARD_WIDTH -
+    VIEWPORT_MARGIN;
+  const maxTop =
+    (typeof window !== "undefined" ? window.innerHeight : 800) -
+    FLOATING_CARD_EST_HEIGHT -
+    VIEWPORT_MARGIN;
+  const left = Math.min(
+    Math.max(anchorX + FLOATING_CARD_OFFSET_X, VIEWPORT_MARGIN),
+    Math.max(maxLeft, VIEWPORT_MARGIN)
+  );
+  const top = Math.min(
+    Math.max(anchorY + FLOATING_CARD_OFFSET_Y, VIEWPORT_MARGIN),
+    Math.max(maxTop, VIEWPORT_MARGIN)
+  );
+  return { left, top };
+}
+
 export function ScheduleNavigator3D() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -69,6 +97,9 @@ export function ScheduleNavigator3D() {
   const [projectedEndIso, setProjectedEndIso] = useState<string | null>(null);
   const [activeCategories, setActiveCategories] = useState<DelayCategory[]>([]);
   const [activeSeverities, setActiveSeverities] = useState<DelaySeverity[]>([]);
+  const [cardAnchor, setCardAnchor] = useState<
+    { x: number; y: number; onScreen: boolean } | null
+  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,6 +249,42 @@ export function ScheduleNavigator3D() {
       { autoAlpha: 1, y: 0, duration: 0.28, ease: "expo.out" }
     );
   }, [selected?.id, selectedRoute?.id, clusterItems.length]);
+
+  // Live-track the card's anchor point in the scene each frame while a
+  // shard/route is selected, so the card and its leader line stay pinned to
+  // the subject as the camera orbits/reframes instead of sitting in a fixed
+  // corner disconnected from what was clicked.
+  useEffect(() => {
+    if (!selected && !selectedRoute) {
+      setCardAnchor(null);
+      return;
+    }
+    let raf = 0;
+    const tick = () => {
+      const controller = controllerRef.current;
+      const host = hostRef.current;
+      if (!controller || !host) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      const local = selectedRoute
+        ? controller.getRouteScreenAnchor(selectedRoute.id)
+        : controller.getShardScreenAnchor();
+      if (!local) {
+        setCardAnchor(null);
+      } else {
+        const hostRect = host.getBoundingClientRect();
+        setCardAnchor({
+          x: hostRect.left + local.x,
+          y: hostRect.top + local.y,
+          onScreen: local.onScreen,
+        });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [selected?.id, selectedRoute?.id]);
 
   // Legend reads top-to-bottom as a short staggered reveal on first render —
   // motion with a purpose (draws the eye down the key once) rather than a
@@ -616,9 +683,44 @@ export function ScheduleNavigator3D() {
         </div>
       </div>
 
-      <aside className={styles.sidePanel} aria-label="Route detail and legend">
-        {(selectedRoute || selected) && (
-        <div className={styles.routeSection} aria-live="polite" ref={cardRef}>
+      {(selectedRoute || selected) && cardAnchor && (() => {
+        const { left, top } = clampCardPosition(cardAnchor.x, cardAnchor.y);
+        const cardCenterY = top + 40;
+        const leaderTargetX = cardAnchor.x < left ? left : left + FLOATING_CARD_WIDTH;
+        return (
+          <>
+            <svg
+              className={styles.leaderLineSvg}
+              aria-hidden
+              style={{ opacity: cardAnchor.onScreen ? 1 : 0 }}
+            >
+              <line
+                x1={cardAnchor.x}
+                y1={cardAnchor.y}
+                x2={leaderTargetX}
+                y2={cardCenterY}
+                className={styles.leaderLine}
+              />
+              <circle
+                cx={cardAnchor.x}
+                cy={cardAnchor.y}
+                r={4}
+                className={styles.leaderDot}
+              />
+            </svg>
+            <div
+              className={styles.routeSection}
+              style={{
+                position: "fixed",
+                left,
+                top,
+                width: FLOATING_CARD_WIDTH,
+                opacity: cardAnchor.onScreen ? 1 : 0,
+                pointerEvents: cardAnchor.onScreen ? "auto" : "none",
+              }}
+              aria-live="polite"
+              ref={cardRef}
+            >
           {selectedRoute ? (
             <div className={styles.card}>
               <div className={styles.cardHead}>
@@ -819,9 +921,12 @@ export function ScheduleNavigator3D() {
               )}
             </div>
           ) : null}
-        </div>
-        )}
+            </div>
+          </>
+        );
+      })()}
 
+      <aside className={styles.sidePanel} aria-label="Legend">
         <div className={styles.legendSection} ref={legendRef}>
           <p className={styles.legendTitle}>Legend</p>
           <ul className={styles.legendList}>
