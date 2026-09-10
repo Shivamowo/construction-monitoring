@@ -72,6 +72,7 @@ function clampCardPosition(anchorX: number, anchorY: number) {
 }
 
 export function ScheduleNavigator3D() {
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -98,6 +99,7 @@ export function ScheduleNavigator3D() {
   const [activeCategories, setActiveCategories] = useState<DelayCategory[]>([]);
   const [activeSeverities, setActiveSeverities] = useState<DelaySeverity[]>([]);
   const [criticalPathVisible, setCriticalPathVisible] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<
     { x: number; y: number; onScreen: boolean } | null
   >(null);
@@ -245,6 +247,47 @@ export function ScheduleNavigator3D() {
   useEffect(() => {
     controllerRef.current?.setCriticalPathVisible(criticalPathVisible);
   }, [criticalPathVisible]);
+
+  // Real Fullscreen API (not a CSS-only fake) on .stage — canvas + status
+  // bar + legend + filter chips all live under it, so this brings the whole
+  // chrome along and leaves the outer app shell/nav behind.
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const active = document.fullscreenElement === stageRef.current;
+      setIsFullscreen(active);
+      // The browser resizes .stage synchronously with the fullscreenchange
+      // event, but layout/reflow of its descendants (and therefore
+      // hostRef's new clientWidth/clientHeight) isn't guaranteed settled
+      // until the next frame — resize on both this tick and the next to
+      // avoid a one-frame-stale WebGL canvas/aspect ratio.
+      const resize = () => {
+        if (!hostRef.current || !controllerRef.current) return;
+        controllerRef.current.setSize(
+          hostRef.current.clientWidth,
+          hostRef.current.clientHeight
+        );
+      };
+      resize();
+      requestAnimationFrame(resize);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      stageRef.current?.requestFullscreen().catch(() => {
+        // Fullscreen can be denied (permissions policy, user gesture
+        // requirements not met, etc.) — fail silently, UI state stays
+        // in sync via fullscreenchange (which won't fire, so isFullscreen
+        // correctly remains false).
+      });
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   useEffect(() => {
     if ((!selected && !selectedRoute) || !cardRef.current) return;
@@ -468,10 +511,33 @@ export function ScheduleNavigator3D() {
 
   return (
     <div className={styles.root}>
-      <div className={styles.stage}>
+      <div className={styles.stage} ref={stageRef}>
         <div className={styles.viewportColumn}>
           <div className={styles.viewport} ref={hostRef}>
           <canvas ref={canvasRef} className={styles.canvas} />
+          <button
+            type="button"
+            className={styles.fullscreenBtn}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            onClick={toggleFullscreen}
+          >
+            {isFullscreen ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 3v4a1 1 0 0 1-1 1H4" />
+                <path d="M20 9h-4a1 1 0 0 1-1-1V4" />
+                <path d="M15 21v-4a1 1 0 0 1 1-1h4" />
+                <path d="M4 15h4a1 1 0 0 1 1 1v4" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 8V5a1 1 0 0 1 1-1h3" />
+                <path d="M16 4h3a1 1 0 0 1 1 1v3" />
+                <path d="M20 16v3a1 1 0 0 1-1 1h-3" />
+                <path d="M8 20H5a1 1 0 0 1-1-1v-3" />
+              </svg>
+            )}
+          </button>
           <div className={styles.filterOverlay} aria-label="Delay shard filters">
             <span className={styles.filterLabel}>Shards</span>
             <button type="button" className={!activeCategories.length ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={!activeCategories.length} onClick={() => setActiveCategories([])}>All</button>

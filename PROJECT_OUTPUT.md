@@ -50,6 +50,15 @@ Last updated: 2026-09-11
 
 ## Task history
 
+### 2026-09-11 — Full-screen toggle for Schedule Navigator
+
+- Added a real Fullscreen API toggle (`element.requestFullscreen()` / `document.exitFullscreen()`, not CSS-only) on `.stage` — chosen over `.viewport` (canvas-only) because `.stage` is the common ancestor of the canvas, status bar, filter chips, AND the legend `<aside>`, so one fullscreen call brings all of it along while leaving the outer app header/nav (which lives outside this component) behind.
+- Button top-right of the viewport (`.fullscreenBtn`, matches the existing light/cream + `--chrome-accent` hover theme used by `.zoomBtn`), icon swaps expand↔collapse based on `document.fullscreenElement`, synced via a `fullscreenchange` listener (not just the click handler) so it stays correct if the user exits via Esc.
+- On `fullscreenchange`, calls the same `controller.setSize(hostRef.clientWidth, hostRef.clientHeight)` the existing window-resize handler uses — once immediately and once again on the next animation frame, since the browser's own fullscreen resize can land a frame before the descendant layout (and therefore `hostRef`'s new `clientWidth/clientHeight`) has actually settled.
+- Added a `.stage:fullscreen` (+ `-webkit-` prefix) CSS rule giving it an explicit cream background — the fullscreen element's own background is what shows during fullscreen (not `.root`'s, which is now an inert ancestor), and without this rule fullscreen would show through to the browser's default black backdrop.
+
+**Verification:** `tsc --noEmit` clean; `npm run build` clean. Real headless Chrome at `http://localhost:3001/`: HTTP 200, 0 console/page errors. Clicked the toggle — `document.fullscreenElement` became the `.stage` element, the button's `aria-label` flipped `Enter fullscreen`→`Exit fullscreen`, and the canvas's actual pixel dimensions grew from `946×606` to `1018×784` (confirming the resize handler fired and the WebGL canvas wasn't left clipped at its pre-fullscreen size). Clicked again — `document.fullscreenElement` returned to `null`. Screenshot in the fullscreen state confirms the outer "Construction Monitor" header/nav is gone, the canvas fills the browser viewport, and the filter bar/legend/scrubber/zoom controls all scale and reposition correctly rather than clipping or overflowing.
+
 ### 2026-09-11 — Critical path + milestones: solid markers, gated toggle
 
 - Root cause confirmed as diagnosed: `createProjectedEmphasisLine` was a hairline `THREE.Line` only `z += 0.055` off the glossy `0.07`-radius projected tube — effectively invisible. `createCriticalPathMarker`/`createMilestoneMarker` were `EdgesGeometry` wireframe boxes with no fill, unreadable at this scale.
