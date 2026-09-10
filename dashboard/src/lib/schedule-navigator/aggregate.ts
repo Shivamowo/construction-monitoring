@@ -9,6 +9,7 @@ import type {
 } from "@shared/schema/types";
 
 export type DelaySeverity = "none" | "mild" | "severe";
+export type DelayCategory = "customs" | "weather" | "labor" | "other";
 
 /**
  * Aggregated milestone waypoint for the schedule navigator.
@@ -31,6 +32,10 @@ export interface ForecastRisk {
   riskLevel: "watch" | "elevated";
   /** Free-text forecast rationale — why this risk is flagged now. */
   reason: string;
+}
+
+export interface StructuralMilestone {
+  label: string;
 }
 
 export interface NavigatorWaypoint {
@@ -60,6 +65,8 @@ export interface NavigatorWaypoint {
   /** Dominant (or only) source for deviationDays in this group. */
   deviationDaysSource: DeviationDaysSource | "unknown";
   severity: DelaySeverity;
+  /** Informational UI category for delay/forecast filtering. */
+  delayCategory?: DelayCategory;
   /** Free-text delay cause — present on dummy scenario; optional until schema lands. */
   delayReason?: string;
   /** Partial catch-up plan — present on some dummy delays; optional until schema lands. */
@@ -86,6 +93,8 @@ export interface NavigatorWaypoint {
    * exposes a risk model.
    */
   forecastRisk?: ForecastRisk;
+  /** Structural checkpoint marker; state is derived from timeline.asOf. */
+  milestone?: StructuralMilestone;
 }
 
 export interface ScheduleNavigatorPayload {

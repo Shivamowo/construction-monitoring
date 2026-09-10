@@ -54,6 +54,7 @@
         "summary": "Weekend overtime pours and accelerated rebar set recover 6 of 9 days; 3 days remain on the cascade.",
         "resourceCost": "+2 concrete crews, 3 weekends of overtime"
       },
+        "milestone": { "label": "Foundations complete" },
       "counts": {
         "onTime": 16,
         "behind": 10,
@@ -63,6 +64,7 @@
       },
       "deviationDaysSource": "forged",
       "severity": "mild",
+      "delayCategory": "weather",
       "cumulativePlannedPct": 15.5,
       "cumulativeActualPct": 15.5
     },
@@ -112,6 +114,8 @@
       },
       "deviationDaysSource": "forged",
       "severity": "severe",
+      "delayCategory": "customs",
+      "milestone": { "label": "Frame erected" },
       "cumulativePlannedPct": 38.0,
       "cumulativeActualPct": 38.0
     },
@@ -143,6 +147,8 @@
       },
       "deviationDaysSource": "forged",
       "severity": "mild",
+      "delayCategory": "labor",
+      "milestone": { "label": "Envelope closed" },
       "cumulativePlannedPct": 51.6,
       "cumulativeActualPct": 45.0
     },
@@ -196,6 +202,8 @@
         "riskLevel": "elevated",
         "reason": "Imported joinery package routes through the same Rotterdam customs lane that held the structural steel package in April; no hold yet, but lead-time risk is flagged for this shipment."
       },
+      "delayCategory": "customs",
+      "milestone": { "label": "Interior fit-out complete" },
       "catchUpPlan": {
         "daysLost": 8,
         "daysRecovered": 3,
@@ -230,6 +238,7 @@
         "riskLevel": "watch",
         "reason": "Historical autumn rainfall pattern in this region has delayed roof dry-in during the Aug–Sep window on comparable builds; not yet a confirmed hold."
       }
+      ,"delayCategory": "weather"
     },
     {
       "id": "handover",

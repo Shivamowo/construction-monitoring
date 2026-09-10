@@ -29,6 +29,29 @@ export interface ForecastShardSpec {
   tangent: THREE.Vector3;
 }
 
+export interface CriticalWaypointSpec {
+  waypoint: NavigatorWaypoint;
+  waypointIndex: number;
+  endImpactDays: number;
+  floatDays: number;
+  isCritical: boolean;
+  position: THREE.Vector3;
+}
+
+export interface ProjectedSegmentSpec {
+  waypointIndex: number;
+  startX: number;
+  endX: number;
+  isCritical: boolean;
+}
+
+export interface MilestoneSpec {
+  waypoint: NavigatorWaypoint;
+  waypointIndex: number;
+  state: "reached" | "upcoming";
+  position: THREE.Vector3;
+}
+
 export interface ShardCluster {
   id: string;
   curveT: number;
@@ -53,6 +76,9 @@ export interface NavigatorPathModel {
   clusters: ShardCluster[];
   /** Predicted-risk markers on the projected (future) line. */
   forecastShards: ForecastShardSpec[];
+  criticalPath: CriticalWaypointSpec[];
+  projectedSegments: ProjectedSegmentSpec[];
+  milestones: MilestoneSpec[];
   /** Last waypoint fully behind asOf (for HUD); today may sit between waypoints. */
   todayWaypointIndex: number;
   /** Calendar today from timeline.asOf. */
@@ -196,6 +222,61 @@ export function computeCascadedSchedule(
       cascadeBefore,
       cascadeAfter,
       projectedEnd: addDays(w.plannedEnd, cascadeBefore + residualLocal),
+    };
+  });
+}
+
+/**
+ * Identify schedule drivers by measuring each waypoint's remaining contribution
+ * to the current projected finish. A zero-impact waypoint has float; a positive
+ * impact is on the current critical path. This remains valid after recoveries.
+ */
+export function computeCriticalPath(
+  waypoints: NavigatorWaypoint[],
+  recoveries: Record<string, number> = {}
+): Array<Pick<CriticalWaypointSpec, "waypoint" | "waypointIndex" | "endImpactDays" | "floatDays" | "isCritical">> {
+  const current = computeCascadedSchedule(waypoints, recoveries);
+  const currentEnd = current[current.length - 1]?.projectedEnd;
+  if (!currentEnd) return [];
+
+  return current.map((entry, waypointIndex) => {
+    const waypoint = waypoints[waypointIndex];
+    const actualResidual = Math.max(
+      0,
+      waypoint.localDelayDays - Math.min(
+        Math.max(0, recoveries[waypoint.id] ?? 0),
+        waypoint.localDelayDays
+      )
+    );
+    const forecastResidual = waypoint.forecastRisk
+      ? Math.max(
+          0,
+          waypoint.forecastRisk.predictedDelayDays - Math.min(
+            Math.max(0, recoveries[waypoint.id] ?? 0),
+            waypoint.forecastRisk.predictedDelayDays
+          )
+        )
+      : 0;
+    const unresolvedActual = actualResidual > 0 && !waypoint.catchUpPlan;
+    const isCritical = unresolvedActual || forecastResidual > 0;
+    const withoutResidual = computeCascadedSchedule(waypoints, {
+      ...recoveries,
+      [waypoint.id]: waypoint.localDelayDays,
+    });
+    const alternateEnd = withoutResidual[withoutResidual.length - 1]?.projectedEnd ?? currentEnd;
+    const cascadeImpactDays = Math.max(
+      0,
+      Math.round((parseTime(currentEnd) - parseTime(alternateEnd)) / 86400000)
+    );
+    const endImpactDays = isCritical
+      ? Math.max(cascadeImpactDays, actualResidual + forecastResidual)
+      : 0;
+    return {
+      waypoint,
+      waypointIndex,
+      endImpactDays,
+      floatDays: isCritical ? 0 : actualResidual + forecastResidual,
+      isCritical,
     };
   });
 }
@@ -507,6 +588,9 @@ export function buildNavigatorPathModel(
       shards: [],
       clusters: [],
       forecastShards: [],
+      criticalPath: [],
+      projectedSegments: [],
+      milestones: [],
       todayWaypointIndex: 0,
       todayIso,
       todayPosition: emptyToday,
@@ -645,6 +729,35 @@ export function buildNavigatorPathModel(
     projectedCurve,
     asOfMs
   );
+  const criticalPath = computeCriticalPath(waypoints).map((entry) => {
+    const point = curvePointAtX(projectedCurve, dateToX(entry.waypoint.projectedEnd, timelineScale));
+    return { ...entry, position: point.position };
+  });
+  const projectedSegments = waypoints.flatMap((waypoint, waypointIndex) => {
+    if (parseTime(waypoint.plannedEnd) <= asOfMs) return [];
+    const previous = waypoints[waypointIndex - 1];
+    const startIso = previous && parseTime(previous.plannedEnd) > asOfMs
+      ? previous.projectedEnd
+      : todayIso;
+    const critical = criticalPath[waypointIndex]?.isCritical ?? false;
+    return [{
+      waypointIndex,
+      startX: dateToX(startIso, timelineScale),
+      endX: dateToX(waypoint.projectedEnd, timelineScale),
+      isCritical: critical,
+    }];
+  });
+  const milestones = waypoints.flatMap((waypoint, waypointIndex) => {
+    if (!waypoint.milestone) return [];
+    const curve = parseTime(waypoint.plannedEnd) <= asOfMs ? actualCurve : projectedCurve;
+    const point = curvePointAtX(curve, dateToX(waypoint.projectedEnd, timelineScale));
+    return [{
+      waypoint,
+      waypointIndex,
+      state: parseTime(waypoint.plannedEnd) <= asOfMs ? "reached" as const : "upcoming" as const,
+      position: point.position,
+    }];
+  });
   const bounds = new THREE.Box3().setFromPoints([
     ...plannedPoints,
     ...fullJourneyPoints,
@@ -655,6 +768,7 @@ export function buildNavigatorPathModel(
     new THREE.Vector3(PCT_AXIS_X, pctToY(0), timelineScale.axisZ),
     new THREE.Vector3(PCT_AXIS_X, pctToY(100), timelineScale.axisZ),
     ...forecastShards.map((f) => f.position),
+    ...milestones.map((m) => m.position),
   ]);
 
   return {
@@ -669,6 +783,9 @@ export function buildNavigatorPathModel(
     shards,
     clusters,
     forecastShards,
+    criticalPath,
+    projectedSegments,
+    milestones,
     todayWaypointIndex,
     todayIso,
     todayPosition: todaySample.position.clone(),

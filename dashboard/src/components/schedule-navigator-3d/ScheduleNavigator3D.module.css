@@ -178,6 +178,88 @@
       rgba(250, 244, 236, 0.92) 100%);
 }
 
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-muted);
+  font-size: 0.68rem;
+}
+
+.filterOverlay {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: calc(100% - 5rem);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: 999px;
+  background: rgba(255, 252, 246, 0.86);
+  box-shadow: 0 4px 14px rgba(90, 80, 70, 0.12);
+  backdrop-filter: blur(8px);
+  color: var(--chrome-muted);
+  font-size: 0.64rem;
+}
+
+.filterOverlay .filterChip {
+  min-height: 1.35rem;
+  background: transparent;
+}
+
+.filterOverlay .filterProvenance {
+  margin-left: var(--space-1);
+}
+
+.filterLabel {
+  margin-right: var(--space-1);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.filterChip {
+  min-height: 1.5rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--chrome-muted);
+  font: inherit;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: color var(--ease-ui), border-color var(--ease-ui), background var(--ease-ui);
+}
+
+.filterChip:hover,
+.filterChipActive {
+  border-color: var(--chrome-accent);
+  background: rgba(95, 122, 79, 0.12);
+  color: var(--chrome-accent);
+}
+
+.filterDivider {
+  width: 1px;
+  height: 1rem;
+  margin: 0 var(--space-1);
+  background: var(--chrome-border);
+}
+
+.filterProvenance {
+  margin-left: auto;
+  color: var(--chrome-faint);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+}
+
 .scrubProjectedBanner {
   flex: 0 0 100%;
   margin: 0;
@@ -784,6 +866,74 @@
   background: transparent;
   border: 1.5px solid #c9843a;
   transform: rotate(15deg);
+}
+
+.swatchCritical {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border: 1.5px solid #b34c2e;
+  transform: rotate(45deg);
+}
+
+.swatchSlack {
+  width: 0.85rem;
+  height: 0.14rem;
+  flex-shrink: 0;
+  background: repeating-linear-gradient(90deg,
+      #b8aa98 0 3px,
+      transparent 3px 6px);
+  opacity: 0.75;
+}
+
+.swatchMilestone {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border: 1.5px solid #2f7f6f;
+  transform: rotate(45deg);
+}
+
+.criticalReadout {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.recommendationBadge {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--chrome-accent);
+  background: rgba(95, 122, 79, 0.1);
+  color: var(--chrome-accent);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recommendationBadge span {
+  color: var(--chrome-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.recommendationNote {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed rgba(95, 122, 79, 0.55);
+  color: var(--chrome-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.recommendationNote strong {
+  color: var(--chrome-accent);
 }
 
 .swatchGhost {
