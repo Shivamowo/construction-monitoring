@@ -116,19 +116,8 @@ export function buildForecastShards(
     const raw = fullJourneyPoints[ptIndex];
     if (!raw) return;
 
-    let bestT = 0;
-    let bestD = Infinity;
-    for (let s = 0; s <= 48; s++) {
-      const t = s / 48;
-      const d = projectedCurve.getPoint(t).distanceToSquared(raw);
-      if (d < bestD) {
-        bestD = d;
-        bestT = t;
-      }
-    }
-    const position = projectedCurve.getPoint(bestT);
-    const tangent = projectedCurve.getTangent(bestT).normalize();
-    shards.push({ waypoint, waypointIndex, position, tangent });
+    const hit = curvePointAtX(projectedCurve, raw.x);
+    shards.push({ waypoint, waypointIndex, position: hit.position, tangent: hit.tangent });
   });
   return shards;
 }
@@ -144,7 +133,7 @@ function plannedPct(
   index: number,
   total: number
 ): number {
-  return waypoint.cumulativePlannedPct ?? ((index + 1) / total) * 100;
+  return Math.min(100, waypoint.cumulativePlannedPct ?? ((index + 1) / total) * 100);
 }
 
 /**
@@ -157,9 +146,26 @@ function progressPct(
   index: number,
   total: number
 ): number {
-  return (
+  return Math.min(
+    100,
     waypoint.cumulativeActualPct ?? plannedPct(waypoint, index, total)
   );
+}
+
+/**
+ * A project cannot be more than 100% complete, so no line may continue past
+ * the first control point that reaches it — anything drawn beyond would be a
+ * flat run at 100% implying work happening after completion. Keeps the point
+ * that lands on 100% (that IS the terminus) and drops everything after it.
+ */
+export function truncateAtFullCompletion(
+  points: THREE.Vector3[]
+): THREE.Vector3[] {
+  const yFull = pctToY(100);
+  const idx = points.findIndex((p) => p.y >= yFull - 1e-6);
+  if (idx < 0) return points;
+  const keep = Math.max(idx + 1, 2);
+  return keep >= points.length ? points : points.slice(0, keep);
 }
 
 /**
@@ -329,6 +335,37 @@ export function sampleJourneyAtDate(
 }
 
 /**
+ * Canonical "where is date X on this rendered curve" lookup — the single
+ * source of truth both delay shards and the scrub playhead must use so they
+ * never disagree. Bisects on curve X (monotonic by construction: control
+ * points are ordered by date) rather than lerping the raw control-point
+ * polyline, so the result sits exactly on the visible Catmull-Rom tube.
+ */
+export function curvePointAtX(
+  curve: THREE.CatmullRomCurve3,
+  targetX: number
+): { position: THREE.Vector3; tangent: THREE.Vector3; t: number } {
+  const xAt = (t: number) => curve.getPoint(t).x;
+  const x0 = xAt(0);
+  const x1 = xAt(1);
+  if (targetX <= x0) {
+    return { position: curve.getPoint(0), tangent: curve.getTangent(0).normalize(), t: 0 };
+  }
+  if (targetX >= x1) {
+    return { position: curve.getPoint(1), tangent: curve.getTangent(1).normalize(), t: 1 };
+  }
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 32; i++) {
+    const mid = (lo + hi) / 2;
+    if (xAt(mid) < targetX) lo = mid;
+    else hi = mid;
+  }
+  const t = (lo + hi) / 2;
+  return { position: curve.getPoint(t), tangent: curve.getTangent(t).normalize(), t };
+}
+
+/**
  * Build catch-up morph targets for the projected path after applying one or
  * more recoveries. Each recovery closes only daysRecovered/daysLost of that
  * waypoint's local delay; other delays keep their full residual. Multiple
@@ -339,18 +376,29 @@ export function buildCatchUpProjectedControls(
   timeline: ScheduleNavigatorPayload["timeline"],
   todayIso: string,
   todayPosition: THREE.Vector3,
-  recoveries: Record<string, number>
+  recoveries: Record<string, number>,
+  /**
+   * The scene's stable date→X scale. Must be passed once the timeline's
+   * projected end can move: rebuilding the scale from a shortened projected
+   * end re-normalises every date, so a recovered path would re-stretch to the
+   * full span and end at the same X it started at — the axis rail and its
+   * ticks (built once) would then disagree with the curve about what date a
+   * given X is, and taking a route would never visibly shorten the path.
+   */
+  fixedScale?: TimelineScale
 ): THREE.Vector3[] | null {
   const active = Object.entries(recoveries).filter(([, d]) => d > 0);
   if (active.length === 0) return null;
 
-  const scale = buildTimelineScale({
-    start: timeline.start,
-    plannedEnd: timeline.end,
-    projectedEnd: timeline.projectedEnd,
-    todayIso,
-    xSpan: X_SPAN,
-  });
+  const scale =
+    fixedScale ??
+    buildTimelineScale({
+      start: timeline.start,
+      plannedEnd: timeline.end,
+      projectedEnd: timeline.projectedEnd,
+      todayIso,
+      xSpan: X_SPAN,
+    });
 
   const cascaded = computeCascadedSchedule(waypoints, recoveries);
   const journey = buildJourneyPoints(waypoints, cascaded, scale);
@@ -365,7 +413,7 @@ export function buildCatchUpProjectedControls(
     controls.push(journey[journey.length - 1]?.clone() ?? todayPosition.clone());
   }
   controls[0] = todayPosition.clone();
-  return controls;
+  return truncateAtFullCompletion(controls);
 }
 
 /**
@@ -378,7 +426,10 @@ export function buildRoutePreviewPoints(
   shardPosition: THREE.Vector3,
   targets: THREE.Vector3[]
 ): THREE.Vector3[] {
-  const pts = [shardPosition.clone(), ...targets.map((p) => p.clone())];
+  const pts = truncateAtFullCompletion([
+    shardPosition.clone(),
+    ...targets.map((p) => p.clone()),
+  ]);
   const n = pts.length;
   const maxOffset = 0.55;
   return pts.map((p, i) => {
@@ -490,7 +541,7 @@ export function buildNavigatorPathModel(
     pctToY(0),
     0
   );
-  const plannedPoints = [
+  const plannedPoints = truncateAtFullCompletion([
     plannedStartPt,
     ...waypoints.map((w, i) => {
       const lateral = Math.sin(i * 0.72) * LATERAL;
@@ -500,15 +551,15 @@ export function buildNavigatorPathModel(
         lateral * 0.28
       );
     }),
-  ];
+  ]);
 
   // Journey control points begin with a synthetic anchor at timeline.start so
   // the glossy tube's first vertex lines up with the "START" label / axis rail
   // (both at x = dateToX(start) = 0), not with the first waypoint's end date.
-  const fullJourneyPoints = [
+  const fullJourneyPoints = truncateAtFullCompletion([
     new THREE.Vector3(dateToX(timeline.start, timelineScale), pctToY(0), 0),
     ...buildJourneyPoints(waypoints, cascaded, timelineScale),
-  ];
+  ]);
   const todaySample = sampleJourneyAtDate(
     fullJourneyPoints,
     timelineScale,
@@ -573,27 +624,11 @@ export function buildNavigatorPathModel(
       // fullJourneyPoints now leads with a synthetic start anchor, so the
       // waypoint-indexed point lives at index + 1.
       const ptIndex = waypointIndex + 1;
-      position = fullJourneyPoints[ptIndex].clone();
-      const prev =
-        fullJourneyPoints[Math.max(0, ptIndex - 1)] ?? position;
-      const next =
-        fullJourneyPoints[Math.min(fullJourneyPoints.length - 1, ptIndex + 1)] ??
-        position;
-      tangent = next.clone().sub(prev).normalize();
-      // Parameter along actual path by nearest sample
-      let bestT = 0;
-      let bestD = Infinity;
-      for (let s = 0; s <= 48; s++) {
-        const t = s / 48;
-        const d = actualCurve.getPoint(t).distanceToSquared(position);
-        if (d < bestD) {
-          bestD = d;
-          bestT = t;
-        }
-      }
-      curveT = bestT;
-      position = actualCurve.getPoint(curveT);
-      tangent = actualCurve.getTangent(curveT).normalize();
+      const raw = fullJourneyPoints[ptIndex];
+      const hit = curvePointAtX(actualCurve, raw.x);
+      curveT = hit.t;
+      position = hit.position;
+      tangent = hit.tangent;
     } else {
       position = todaySample.position.clone();
       tangent = todaySample.tangent.clone();

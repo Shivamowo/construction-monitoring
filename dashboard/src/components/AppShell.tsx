@@ -16,8 +16,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className={styles.shell}>
       <header className={styles.header}>
         <div className={styles.brandBlock}>
-          <p className={styles.eyebrow}>Construction monitoring</p>
-          <h1 className={styles.brand}>Schependomlaan</h1>
+          <p className={styles.eyebrow}>Project: 1</p>
+          <h1 className={styles.brand}>Construction Monitor</h1>
         </div>
         <nav className={styles.nav} aria-label="Dashboard views">
           {NAV.map((item) =>

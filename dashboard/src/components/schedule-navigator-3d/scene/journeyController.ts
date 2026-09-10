@@ -12,13 +12,12 @@ import type {
 } from "@/lib/schedule-navigator/aggregate";
 import {
   buildCatchUpProjectedControls,
-  buildJourneyPoints,
   buildNavigatorPathModel,
   buildRoutePreviewPoints,
   computeCascadedSchedule,
+  curvePointAtX,
   rebuildProjectedCurve,
   recoveryDaysForWaypoint,
-  sampleJourneyAtDate,
   type ShardCluster,
   type NavigatorPathModel,
 } from "./pathFromWaypoints";
@@ -34,6 +33,7 @@ import {
   createRoutePreviewLine,
   createTodayMarker,
   updateProjectedDashLine,
+  updateRoutePreviewLine,
 } from "./pathMeshes";
 import {
   buildAxisAnchors,
@@ -272,6 +272,28 @@ export function createJourneyController(
     return g;
   });
 
+  // Visual-only depth-bias: when a shard's actual curve position coincides with
+  // the today marker (an in-progress delay pinned at "today") or with another
+  // already-placed shard, nudge it forward on Z so both stay independently
+  // visible/clickable. Applied to the mesh's local position only — never to
+  // model.clusters/.forecastShards, which stay the true curve position used by
+  // catch-up math and getShardScreenAnchor now reads the (possibly nudged) mesh
+  // position directly, so the click target and detail-card anchor always agree.
+  const COINCIDENCE_EPS = 0.12;
+  const COINCIDENCE_DEPTH_BIAS = 0.3;
+  const placedMarkerPositions: THREE.Vector3[] = [todayMarker.position.clone()];
+  const applyCoincidenceDepthBias = (g: THREE.Object3D) => {
+    for (const p of placedMarkerPositions) {
+      if (g.position.distanceTo(p) < COINCIDENCE_EPS) {
+        g.position.z += COINCIDENCE_DEPTH_BIAS;
+        break;
+      }
+    }
+    placedMarkerPositions.push(g.position.clone());
+  };
+  clusterGroups.forEach(applyCoincidenceDepthBias);
+  forecastGroups.forEach(applyCoincidenceDepthBias);
+
   // Timeline axis (WebGL rail + key ticks) — calendar X matches path X
   const scale = model.timelineScale;
   const months = monthlyTickMs(scale);
@@ -311,37 +333,24 @@ export function createJourneyController(
 
   // --- Scrub playhead (inspection only — never hides path tubes) ---
   let scrubIso = model.todayIso;
-  const cascadedRest = model.waypoints.map((w) => ({
-    residualLocal: w.localDelayDays,
-    cascadeBefore: w.cascadeShiftBefore,
-    cascadeAfter: w.cascadeShiftAfter,
-    projectedEnd: w.projectedEnd,
-  }));
-  // Prefer live cascade helper for consistency with catch-up recoveries later.
-  // Lead with a synthetic start anchor (same x as the "START" label) so cursor
-  // sampling aligns with the tube's first vertex after the Fix 3 anchor.
-  const cursorJourney = buildJourneyPoints(
-    model.waypoints,
-    cascadedRest.length
-      ? cascadedRest
-      : computeCascadedSchedule(model.waypoints),
-    scale
-  );
-  const fullJourneyPoints = [
-    new THREE.Vector3(dateToX(model.timeline.start, scale), pctToY(0), 0),
-    ...cursorJourney,
-  ];
+
+  // Canonical "where is date X" lookup for the scrub playhead — same
+  // curvePointAtX bisection the delay/forecast shards snap onto, sampling
+  // whichever rendered curve (actual vs projected) covers the date, so the
+  // playhead can never drift off the visible tube the way the old raw
+  // control-point lerp (sampleJourneyAtDate) did.
+  function sampleCurveAtDate(iso: string) {
+    const targetX = dateToX(iso, scale);
+    const curve = iso <= model.todayIso ? model.actualCurve : model.projectedCurve;
+    return curvePointAtX(curve, targetX);
+  }
 
   const playheadLocal = new THREE.Vector3(
     dateToX(scrubIso, scale),
     scale.axisY + 0.55,
     scale.axisZ
   );
-  const pathCursorLocal = sampleJourneyAtDate(
-    fullJourneyPoints,
-    scale,
-    scrubIso
-  ).position.clone();
+  const pathCursorLocal = sampleCurveAtDate(scrubIso).position.clone();
 
   // Slim axis tick + path ring — inspection markers, not geometry gates
   const scrubAxisTick = createKeyTick(
@@ -377,6 +386,22 @@ export function createJourneyController(
       setScrubIso(iso, { reframe: true });
     }
   );
+
+  // A line's end IS its completion point (its own date at 100%), so its end
+  // marker belongs there rather than down on the date rail — anchored on the
+  // rail, the line visibly ran on past its own "PLANNED END"/"PROJECTED END"
+  // marker (different z, so perspective pulled them apart on screen).
+  const endLabelFor = (kind: "plannedEnd" | "projectedEnd") =>
+    screenLabels.find((l) => l.el.dataset.kind === kind) ?? null;
+  const anchorEndLabelToCurve = (
+    kind: "plannedEnd" | "projectedEnd",
+    curve: THREE.CatmullRomCurve3
+  ) => {
+    const label = endLabelFor(kind);
+    if (label) label.local.copy(curve.getPoint(1));
+  };
+  anchorEndLabelToCurve("plannedEnd", model.plannedCurve);
+  anchorEndLabelToCurve("projectedEnd", model.projectedCurve);
 
   const playheadDom = createPlayheadElement(
     options.axisOverlay,
@@ -773,7 +798,7 @@ export function createJourneyController(
     playheadLocal.set(x, scale.axisY + 0.55, scale.axisZ);
     playheadDom.local.copy(playheadLocal);
 
-    const sample = sampleJourneyAtDate(fullJourneyPoints, scale, iso);
+    const sample = sampleCurveAtDate(iso);
     pathCursor.position.copy(sample.position);
     // Orient torus to sit on path (flat-ish relative to up)
     pathCursor.quaternion.identity();
@@ -788,7 +813,7 @@ export function createJourneyController(
   }
 
   function reframeCameraToScrub(iso: string) {
-    const sample = sampleJourneyAtDate(fullJourneyPoints, scale, iso);
+    const sample = sampleCurveAtDate(iso);
     const focus = sample.position.clone();
     const target = focus.clone().add(new THREE.Vector3(0, 0.35, 0));
     const camPos = new THREE.Vector3(
@@ -927,12 +952,16 @@ export function createJourneyController(
       model.shards.find((s) => s.waypoint.id === waypointId) ??
       model.forecastShards.find((s) => s.waypoint.id === waypointId);
     const shardPosition = shard?.position ?? model.todayPosition;
+    // Preview this plan ON TOP of everything already committed, so after a
+    // commit the remaining routes describe the path you'd actually get from
+    // here — not a stale branch off the original baseline.
     const targets = buildCatchUpProjectedControls(
       model.waypoints,
       model.timeline,
       model.todayIso,
       model.todayPosition,
-      { [waypointId]: daysRecovered }
+      { ...appliedRecoveries, [waypointId]: daysRecovered },
+      scale
     );
     if (!targets || targets.length < 2) return null;
     return buildRoutePreviewPoints(shardPosition, targets);
@@ -991,6 +1020,28 @@ export function createJourneyController(
     }
   }
 
+  /**
+   * Re-preview every route that is still on offer against the current
+   * committed path. Called after each commit so the mechanic is recursive:
+   * the new path keeps offering routes for the delays still ahead of it.
+   */
+  function refreshAlternateRoutes() {
+    for (const entry of alternateRoutes) {
+      if (!entry.line.visible) continue;
+      const points = buildAlternateRoutePoints(entry.waypointId);
+      if (!points || points.length < 2) {
+        hideAlternateRoute(entry.waypointId);
+        continue;
+      }
+      updateRoutePreviewLine(entry.line, points);
+      entry.label.local.copy(
+        points[Math.floor(points.length / 2)]
+          .clone()
+          .add(new THREE.Vector3(0, 0.42, 0))
+      );
+    }
+  }
+
   function applyCatchUpPlan(waypointId: string) {
     if (morphing) return;
     hideAlternateRoute(waypointId);
@@ -1035,7 +1086,8 @@ export function createJourneyController(
       model.timeline,
       model.todayIso,
       model.todayPosition,
-      { ...appliedRecoveries }
+      { ...appliedRecoveries },
+      scale
     );
     if (!targets || targets.length < 2) {
       callbacks.onCatchUpComplete?.({
@@ -1097,7 +1149,7 @@ export function createJourneyController(
           projectedEndTick.position.x = THREE.MathUtils.lerp(startTickX, targetTickX, state.t);
         }
         if (projectedLabel) {
-          projectedLabel.local.x = THREE.MathUtils.lerp(startTickX, targetTickX, state.t);
+          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
         }
       },
       onComplete: () => {
@@ -1114,12 +1166,18 @@ export function createJourneyController(
           projectedLabel.el.dataset.routeTaken = "true";
           const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
           if (sub) sub.textContent = formatDay(newProjectedEndIso);
-          projectedLabel.local.x = targetTickX;
+          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
           projectedLabel.el.setAttribute("aria-label", `Scrub to Projected end, ${formatDay(newProjectedEndIso)}`);
         }
         if (projectedEndTick) {
           projectedEndTick.position.x = targetTickX;
         }
+
+        // The committed path is the new current path: every delay still ahead
+        // of it re-offers its own route, previewed against this path (and
+        // compounded on top of what's already been committed), so the mechanic
+        // repeats instead of ending after one commit.
+        refreshAlternateRoutes();
 
         idleActive = true;
         if (!userOrbiting) startIdleDrift(true);
@@ -1249,11 +1307,15 @@ export function createJourneyController(
     },
     getScrubIso: () => scrubIso,
     getShardScreenAnchor: () => {
+      // Read the MESH's actual local position (not model.clusters/.forecastShards),
+      // so the popover anchors to where the shard is actually rendered — including
+      // the today-coincidence depth-bias nudge applied below, which never touches
+      // the underlying model data (curve position / curveT / catch-up math).
       const anchorPos =
         selectedClusterIndex >= 0
-          ? model.clusters[selectedClusterIndex]?.position
+          ? clusterGroups[selectedClusterIndex]?.position
           : selectedForecastIndex >= 0
-            ? model.forecastShards[selectedForecastIndex]?.position
+            ? forecastGroups[selectedForecastIndex]?.position
             : null;
       if (!anchorPos) return null;
       root.updateMatrixWorld(true);
