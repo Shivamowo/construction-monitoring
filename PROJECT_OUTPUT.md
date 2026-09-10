@@ -50,6 +50,16 @@ Last updated: 2026-09-11
 
 ## Task history
 
+### 2026-09-11 — Alternate-route preview: convert to tube (thickness/opacity patch)
+
+- Incoming patch request assumed `createRoutePreviewLine` was already a tube from a prior "patch 2" — **it was not**: read the live source first and found it was still the flat `THREE.Line`/`LineBasicMaterial` from the initial recolor pass, with no matching commit anywhere in `git log --all`. Flagged the mismatch and asked before touching code; user chose "convert to tube now, then apply the patch."
+- `createRoutePreviewLine` / `updateRoutePreviewLine` (`pathMeshes.ts`) rewritten from a flat `THREE.Line` to a `THREE.TubeGeometry` mesh, matching the construction pattern of the other route tubes (planned/actual/projected/taken). Radius `0.075` (new `TUBE_RADIUS_ROUTE_PREVIEW` constant — between projected `0.07` and taken `0.1`), `MeshBasicMaterial` (flat/unlit, keeps the Google-Maps-alternate-route look rather than the glassy `MeshPhysicalMaterial` used by the "real" path tubes), `transparent: true, opacity: 0.45`, `depthWrite: false`.
+- Fixed a latent bug the conversion would otherwise have introduced: `journeyController.ts`'s route-click camera-focus logic read the midpoint via `line.geometry.getAttribute("position")` at `count/2` — correct for a simple polyline, but wrong for a tube mesh (that attribute is a ring of surface vertices, not centerline points, so the camera would have flown to an arbitrary point on the tube's circumference). Added a `points: THREE.Vector3[]` field to `AlternateRouteEntry`, kept in sync in both the initial build and `refreshAlternateRoutes()`, and switched the focus lookup to use it directly instead of the geometry attribute.
+- `AlternateRouteEntry.line` type updated `THREE.Line` → `THREE.Mesh`; raycasting, `hideAlternateRoute`, and `findAlternateRouteFromObject` needed no changes — mesh vs. line raycasting is transparent to that code path.
+- No color/position changes beyond what the radius/material swap required; hex, opacity-of-swatch, and axis-label wiring from the prior two recolor passes are untouched.
+
+**Verification:** `tsc --noEmit` clean; `npm run build` clean. Real headless Chrome at `http://localhost:3001/` (navigator lives at `/`, not `/dev/schedule-navigator-3d`): HTTP 200, 0 console/page errors. Grid-scan click test confirmed the new tube mesh is still a correctly-hit raycast target — found and clicked an alternate-route tube, opened the panel, clicked "Take this route," and the flow completed normally (panel updates, no errors), confirming the geometry-type change didn't regress interaction. Screenshot-roundtrip pixel sampling found 802 pixels matching the target gray in-scene, confirming the tube renders with the correct color/opacity.
+
 ### 2026-09-11 — Route-line recolor: add dedicated `--route-alt` token
 
 - Follow-up to the same-day route recolor below: added a dedicated `--route-alt: #8f887c;` CSS var (distinct from `--chrome-accent`, which stays button/CTA-only) and repointed `.swatchAlternate` background and `.axisKey[data-kind="route"]` color to it instead of the bare hex.

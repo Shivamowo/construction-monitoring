@@ -774,12 +774,13 @@ export function createJourneyController(
     const routeEntry = findAlternateRouteFromObject(hits[0].object);
     if (routeEntry) {
       const wp = model.waypoints.find((w) => w.id === routeEntry.waypointId);
-      const positions = routeEntry.line.geometry.getAttribute("position");
-      if (positions?.count) {
-        const focus = new THREE.Vector3().fromBufferAttribute(
-          positions,
-          Math.floor(positions.count / 2)
-        );
+      // Use the source centerline points, not raw geometry vertices — the
+      // preview is a TubeGeometry mesh now, so its "position" attribute is
+      // tube-surface (ring-of-vertices) data, not points along the curve.
+      if (routeEntry.points.length) {
+        const focus = routeEntry.points[
+          Math.floor(routeEntry.points.length / 2)
+        ].clone();
         routeEntry.line.localToWorld(focus);
         root.worldToLocal(focus);
         flyToFocus(focus);
@@ -1100,7 +1101,11 @@ export function createJourneyController(
    */
   interface AlternateRouteEntry {
     waypointId: string;
-    line: THREE.Line;
+    line: THREE.Mesh;
+    /** Source centerline points — geometry vertices are tube-surface, not
+     * usable for a midpoint focus lookup, so the curve points are kept
+     * alongside the mesh. */
+    points: THREE.Vector3[];
     label: ScreenLabel;
   }
   const alternateRoutes: AlternateRouteEntry[] = [];
@@ -1161,7 +1166,7 @@ export function createJourneyController(
     );
     allProjectedLabels.push(label);
 
-    alternateRoutes.push({ waypointId, line, label });
+    alternateRoutes.push({ waypointId, line, points, label });
   }
 
   // Wider hit-test threshold so thin lines are practical raycast targets.
@@ -1198,6 +1203,7 @@ export function createJourneyController(
         continue;
       }
       updateRoutePreviewLine(entry.line, points);
+      entry.points = points;
       entry.label.local.copy(
         points[Math.floor(points.length / 2)]
           .clone()

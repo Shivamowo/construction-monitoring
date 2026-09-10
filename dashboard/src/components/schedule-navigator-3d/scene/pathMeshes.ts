@@ -6,6 +6,8 @@ const TUBE_RADIUS_PLANNED = 0.055;
 const TUBE_RADIUS_PROJECTED = 0.07;
 /** Boldest of all lines — "this is the route you're on now," confident/current. */
 const TUBE_RADIUS_TAKEN = 0.1;
+/** Visible from afar without competing with the current (taken) path. */
+const TUBE_RADIUS_ROUTE_PREVIEW = 0.075;
 const TUBE_RADIAL = 24;
 
 export function createPlannedTube(
@@ -205,22 +207,31 @@ export function updateProjectedDashLine(
  * look like if the shard's catch-up plan were taken. Not committed until the
  * user clicks the button; purely a preview overlay alongside the real
  * projected tube. Google-Maps-alternate-route treatment: flat, low-opacity,
- * NOT dashed (dash is reserved for ghosted/superseded routes).
+ * NOT dashed (dash is reserved for ghosted/superseded routes). Radius sits
+ * close to the actual/projected tubes — visible from afar — but stays below
+ * the taken-route radius so it never competes with the current path.
  */
-export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Line {
+export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Mesh {
   const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
-  const pts = curve.getPoints(64);
-  const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-  const material = new THREE.LineBasicMaterial({
+  const tubular = Math.max(48, Math.floor(curve.getLength() * 8));
+  const geometry = new THREE.TubeGeometry(
+    curve,
+    tubular,
+    TUBE_RADIUS_ROUTE_PREVIEW,
+    TUBE_RADIAL,
+    false
+  );
+  const material = new THREE.MeshBasicMaterial({
     color: new THREE.Color("#8f887c"),
     transparent: true,
-    opacity: 0.5,
+    opacity: 0.45,
+    depthWrite: false,
   });
-  const line = new THREE.Line(geometry, material);
-  line.name = "route-preview";
-  line.userData.kind = "route-preview";
-  line.position.y += 0.03;
-  return line;
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "route-preview";
+  mesh.userData.kind = "route-preview";
+  mesh.position.y += 0.03;
+  return mesh;
 }
 
 /**
@@ -303,13 +314,19 @@ export function createRoutePreviewLabel(text: string): THREE.Sprite {
 }
 
 export function updateRoutePreviewLine(
-  line: THREE.Line,
+  mesh: THREE.Mesh,
   points: THREE.Vector3[]
 ): void {
   const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
-  const pts = curve.getPoints(64);
-  line.geometry.dispose();
-  line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  const tubular = Math.max(48, Math.floor(curve.getLength() * 8));
+  mesh.geometry.dispose();
+  mesh.geometry = new THREE.TubeGeometry(
+    curve,
+    tubular,
+    TUBE_RADIUS_ROUTE_PREVIEW,
+    TUBE_RADIAL,
+    false
+  );
 }
 
 /**
