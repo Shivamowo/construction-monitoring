@@ -2,7 +2,7 @@
 
 **Canonical output file for agent tasks.** When you ask for work, results are written here (updated in place) rather than only in chat.
 
-Last updated: 2026-09-10
+Last updated: 2026-09-11
 
 ---
 
@@ -49,6 +49,26 @@ Last updated: 2026-09-10
 ---
 
 ## Task history
+
+### 2026-09-11 — Route-line recolor: zero hue collisions
+
+- Fixed two green/teal collision + legend-drift bugs in `schedule-navigator-3d`, confirmed by direct source read before changing anything.
+- **Planned reference**: navy `#3a5b7e` → warm graphite `#5c584f`, now `transparent: true, opacity: 0.55` (background reference, not focal). `pathMeshes.ts` `createPlannedTube`.
+- **Actual to date**: unchanged, `#1f7a6c` — now the only green/teal in the palette.
+- **Projected/at-risk**: terracotta `#bf5b3f` → amber `#c98a3a`, applied to both the tube (`createOrUpdateProjectedTube`) and its dashed centerline (`createProjectedDashLine`) so they stay in sync.
+- **Alternate-route preview**: sage `#5f7a4f` dashed → neutral gray `#8f887c`, **solid** (`LineBasicMaterial` replacing `LineDashedMaterial`, `computeLineDistances()` dropped from both create/update paths since nothing dash-dependent remains on that line). Google-Maps-alternate-route treatment. `createRoutePreviewLine` / `updateRoutePreviewLine`.
+- **Taken/committed route**: unchanged, `#1a73e8` — now the only blue anywhere, reads unambiguously as "the decision."
+- **Ghost (superseded route)**: same hue `#9a958c`, opacity 0.32 → 0.2, still dashed — dash now specifically means "no longer relevant" vs. the new solid gray meaning "an option right now."
+- Route-preview pill label (`createRoutePreviewLabel`) recolored to match: stroke `#5f7a4f`→`#8f887c`, text fill `#4a6440`→`#4a463d`.
+- **Legend/scene drift fix** (separate root cause, same audit): `.swatchPlanned` was `#2f7f8f` (didn't match the real navy tube at all); `.swatchActual` was a cream/tan gradient (the real tube has never had a gradient). Both swatches now flat-color and pixel-identical to their 3D line's new hex. `.swatchProjected` dash color and `.swatchAlternate` (dashed sage → flat gray, opacity 0.6) corrected to match. Axis-label colors (`.axisKey[data-kind="plannedEnd"/"projectedEnd"/"route"]`) updated in lockstep; stale "sage to match the dashed route line" comment corrected.
+- `--chrome-accent` / `-strong` / `-bg` / `-border` tokens (button/CTA/filter-chip chrome) deliberately **untouched** — confirmed via computed-style probe that the active filter chip still renders the original `rgb(95,122,79)` sage post-change, so no chrome regressed even though it shares today's old route-preview hex by coincidence.
+
+**Verification:** `tsc --noEmit` clean; `npm run build` clean (3 routes generated — 3D Navigator now lives at `/`, not `/dev/schedule-navigator-3d`, per the 2026-09-09 "Replace 2D Navigator on `/` with 3D" entry below). Real headless Chrome at `http://localhost:3001/`: HTTP 200, 0 console/page errors. Legend swatch computed styles confirmed exact hex match to each new line color (`getComputedStyle` probe, not eyeballed). Screenshot-roundtrip pixel sampling (WebGL canvas can't be `drawImage`'d directly without `preserveDrawingBuffer`, so the check re-decodes a `page.screenshot()` PNG instead) found substantial pixel counts for all 5 new colors in-scene and only stray anti-aliasing-level residue of the old navy/terracotta hues. Alternate-route preview confirmed solid (no dash) at the material level (`LineBasicMaterial`) and via scene pixel presence.
+
+### 2026-09-11 — Repo cleanliness: orphaned debug artifact
+
+- Removed `dashboard/after_chain.tmp.png`, a leftover debug screenshot committed during a prior debugging session with no code/doc references to it. Found via a full project audit; deleted and committed (`7aae694`).
+- Independently re-verified the downstream-alternate-route-after-commit mechanic (previously flagged unverified): taking the Foundations route correctly surfaces a new alternate-route line for the downstream Envelope-shell delay; taking that second route compounds correctly in the status bar (`+24d, 1 plan active` → `+20d, 2 plans active`, exact arithmetic match), axis stays frozen, and each commit leaves its own independent ghost line (confirmed at the code level — `ghostLines.push()` never removes prior entries — plus live "Superseded — see ghosted line" note on each take). 0 console errors across the full sequence.
 
 ### 2026-09-10 — Scope correction: in-scene Navigator surface
 

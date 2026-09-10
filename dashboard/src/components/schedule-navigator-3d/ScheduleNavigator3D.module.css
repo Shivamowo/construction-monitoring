@@ -800,7 +800,7 @@
   height: 0.3rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: linear-gradient(90deg, #f4f0e6, #d9c9a0);
+  background: #1f7a6c;
 }
 
 .swatchPlanned {
@@ -808,7 +808,7 @@
   height: 0.3rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: #2f7f8f;
+  background: #5c584f;
 }
 
 .swatchProjected {
@@ -817,7 +817,7 @@
   border-radius: 999px;
   flex-shrink: 0;
   background: repeating-linear-gradient(90deg,
-      #c45a32 0 5px,
+      #c98a3a 0 5px,
       transparent 5px 9px);
   opacity: 0.9;
 }
@@ -826,10 +826,8 @@
   width: 1rem;
   height: 0.16rem;
   flex-shrink: 0;
-  background: repeating-linear-gradient(90deg,
-      #5f7a4f 0 4px,
-      transparent 4px 7px);
-  opacity: 0.9;
+  background: #8f887c;
+  opacity: 0.6;
 }
 
 .swatchTaken {
@@ -1137,21 +1135,22 @@
 
 /* Color-coding per subject — matches each label's own line/marker color. */
 .axisKey[data-kind="plannedEnd"] {
-  color: #3a5b7e;
+  color: #5c584f;
 }
 
 .axisKey[data-kind="projectedEnd"] {
-  color: #bf5b3f;
+  color: #c98a3a;
 }
 
 .axisKey[data-kind="projectedEnd"][data-route-taken="true"] {
   color: #1a73e8;
 }
 
-/* Alternate-route DOM label — sage to match the dashed route line; purely
-   informational, so it never intercepts clicks meant for the line beneath. */
+/* Alternate-route DOM label — neutral gray to match the solid preview line;
+   purely informational, so it never intercepts clicks meant for the line
+   beneath. */
 .axisKey[data-kind="route"] {
-  color: #5f7a4f;
+  color: #8f887c;
   pointer-events: none;
   cursor: default;
 }

@@ -19,13 +19,15 @@ export function createPlannedTube(
     TUBE_RADIAL,
     false
   );
-  /* Glassy navy planned path — clearcoat for specular on the light backdrop */
+  /* Glassy warm-graphite planned path — clearcoat for specular on the light backdrop */
   const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#3a5b7e"),
+    color: new THREE.Color("#5c584f"),
     metalness: 0.18,
     roughness: 0.24,
     clearcoat: 0.55,
     clearcoatRoughness: 0.16,
+    transparent: true,
+    opacity: 0.55,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
@@ -98,9 +100,9 @@ export function createOrUpdateProjectedTube(
     return existing;
   }
 
-  /* Light theme: saturated terracotta, glassy translucency, shadow depth */
+  /* Light theme: saturated amber, glassy translucency, shadow depth */
   const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#bf5b3f"),
+    color: new THREE.Color("#c98a3a"),
     metalness: 0.12,
     roughness: 0.26,
     transparent: true,
@@ -120,7 +122,7 @@ export function createOrUpdateProjectedTube(
 /**
  * "This is the route you're on now" — solid, confident, bright confirmed-blue
  * (Google-Maps-directions blue), NOT a shade/opacity variant of any of the
- * other 4 line colors (navy planned, teal actual, terracotta projected, sage
+ * other 4 line colors (graphite planned, teal actual, amber projected, gray
  * preview). Bigger radius than every other line for visual weight/priority.
  * Replaces the amber "at risk" projected tube once at least one route has
  * been taken.
@@ -169,10 +171,10 @@ export function createProjectedDashLine(
   curve: THREE.CatmullRomCurve3
 ): THREE.Line {
   const pts = curve.getPoints(80);
-  /* Light theme: muted terracotta dash */
+  /* Light theme: muted amber dash */
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
   const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#bf5b3f"),
+    color: new THREE.Color("#c98a3a"),
     dashSize: 0.45,
     gapSize: 0.3,
     transparent: true,
@@ -198,25 +200,23 @@ export function updateProjectedDashLine(
 }
 
 /**
- * "Take this route" reroute preview — a sage dashed alternate path branching
- * from a delay shard, previewing what the projected line would look like if
- * the shard's catch-up plan were taken. Not committed until the user clicks
- * the button; purely a preview overlay alongside the real projected tube.
+ * "Take this route" reroute preview — a solid neutral-gray alternate path
+ * branching from a delay shard, previewing what the projected line would
+ * look like if the shard's catch-up plan were taken. Not committed until the
+ * user clicks the button; purely a preview overlay alongside the real
+ * projected tube. Google-Maps-alternate-route treatment: flat, low-opacity,
+ * NOT dashed (dash is reserved for ghosted/superseded routes).
  */
 export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Line {
   const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
   const pts = curve.getPoints(64);
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-  const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#5f7a4f"),
-    dashSize: 0.32,
-    gapSize: 0.22,
+  const material = new THREE.LineBasicMaterial({
+    color: new THREE.Color("#8f887c"),
     transparent: true,
-    opacity: 0.85,
-    linewidth: 1,
+    opacity: 0.5,
   });
   const line = new THREE.Line(geometry, material);
-  line.computeLineDistances();
   line.name = "route-preview";
   line.userData.kind = "route-preview";
   line.position.y += 0.03;
@@ -237,7 +237,7 @@ export function createGhostRouteLine(curve: THREE.CatmullRomCurve3): THREE.Line 
     dashSize: 0.4,
     gapSize: 0.35,
     transparent: true,
-    opacity: 0.32,
+    opacity: 0.2,
     linewidth: 1,
   });
   const line = new THREE.Line(geometry, material);
@@ -286,10 +286,10 @@ export function createRoutePreviewLabel(text: string): THREE.Sprite {
   ctx.fillStyle = "rgba(247, 243, 236, 0.96)";
   ctx.fill();
   ctx.lineWidth = 4;
-  ctx.strokeStyle = "#5f7a4f";
+  ctx.strokeStyle = "#8f887c";
   ctx.stroke();
 
-  ctx.fillStyle = "#4a6440";
+  ctx.fillStyle = "#4a463d";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(label, w / 2, h / 2 + 2);
@@ -310,7 +310,6 @@ export function updateRoutePreviewLine(
   const pts = curve.getPoints(64);
   line.geometry.dispose();
   line.geometry = new THREE.BufferGeometry().setFromPoints(pts);
-  line.computeLineDistances();
 }
 
 /**
