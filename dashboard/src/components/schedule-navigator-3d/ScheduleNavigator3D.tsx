@@ -97,6 +97,7 @@ export function ScheduleNavigator3D() {
   const [projectedEndIso, setProjectedEndIso] = useState<string | null>(null);
   const [activeCategories, setActiveCategories] = useState<DelayCategory[]>([]);
   const [activeSeverities, setActiveSeverities] = useState<DelaySeverity[]>([]);
+  const [criticalPathVisible, setCriticalPathVisible] = useState(false);
   const [cardAnchor, setCardAnchor] = useState<
     { x: number; y: number; onScreen: boolean } | null
   >(null);
@@ -240,6 +241,10 @@ export function ScheduleNavigator3D() {
       severities: activeSeverities,
     });
   }, [activeCategories, activeSeverities]);
+
+  useEffect(() => {
+    controllerRef.current?.setCriticalPathVisible(criticalPathVisible);
+  }, [criticalPathVisible]);
 
   useEffect(() => {
     if ((!selected && !selectedRoute) || !cardRef.current) return;
@@ -477,6 +482,8 @@ export function ScheduleNavigator3D() {
             {(["mild", "severe"] as DelaySeverity[]).map((severity) => (
               <button key={severity} type="button" className={activeSeverities.includes(severity) ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={activeSeverities.includes(severity)} onClick={() => toggleSeverity(severity)}>{severity}</button>
             ))}
+            <span className={styles.filterDivider} />
+            <button type="button" className={criticalPathVisible ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={criticalPathVisible} onClick={() => setCriticalPathVisible((v) => !v)}>critical path</button>
             <span className={styles.filterProvenance}>DERIVED</span>
           </div>
           <div

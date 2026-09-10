@@ -560,7 +560,12 @@ export function createForecastShard(spec: {
   return group;
 }
 
-/** A restrained bracket marker for a waypoint that contributes to projected finish. */
+/** Solid diamond node marker at a critical-path waypoint — previously a
+ * hairline EdgesGeometry box, which read as nothing at this scale. A filled
+ * mesh reads reliably regardless of zoom/lighting; hairlines don't. Sits
+ * just above the tube surface so it doesn't embed in the projected tube. */
+export const CRITICAL_MARKER_Y_OFFSET = 0.13;
+
 export function createCriticalPathMarker(spec: {
   id: string;
   position: THREE.Vector3;
@@ -569,19 +574,30 @@ export function createCriticalPathMarker(spec: {
   const group = new THREE.Group();
   group.name = `critical-${spec.id}`;
   group.position.copy(spec.position);
-  const color = spec.isCritical ? "#b34c2e" : "#9a958c";
-  const frame = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.34, 0.34, 0.04)),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: spec.isCritical ? 0.92 : 0.3 })
-  );
-  frame.rotation.x = Math.PI / 4;
-  group.add(frame);
+  group.position.y += CRITICAL_MARKER_Y_OFFSET;
+  const geometry = new THREE.OctahedronGeometry(0.13, 0);
+  geometry.scale(1, 0.62, 1); // squash into a diamond/lozenge silhouette
+  const material = new THREE.MeshBasicMaterial({ color: "#b34c2e" });
+  const diamond = new THREE.Mesh(geometry, material);
+  group.add(diamond);
+  // Only critical waypoints show a marker at all — slack waypoints get none
+  // (a dimmed duplicate of every waypoint was exactly the "competing visual
+  // noise for normal" this pass is removing). The group is still created so
+  // refreshCriticalMarkers can flip it on/off as recomputation reclassifies
+  // waypoints after a route commit, without rebuilding geometry each time.
+  group.visible = spec.isCritical;
   group.userData.kind = "critical-path";
-  group.userData.frame = frame;
+  group.userData.diamond = diamond;
+  group.userData.diamondMat = material;
   return group;
 }
 
-/** Square checkpoint marker, intentionally distinct from the crystal shards. */
+/**
+ * Solid flag marker for a schedule milestone — reuses the today-marker's
+ * established visual grammar (solid needle + solid crossbar/collar, not a
+ * wireframe box) so it reads with the same legibility already proven for
+ * that marker, instead of introducing a second, weaker convention.
+ */
 export function createMilestoneMarker(spec: {
   id: string;
   position: THREE.Vector3;
@@ -591,58 +607,96 @@ export function createMilestoneMarker(spec: {
   group.name = `milestone-${spec.id}`;
   group.position.copy(spec.position);
   const color = spec.state === "reached" ? "#2f7f6f" : "#b27a34";
-  const frame = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.28, 0.28, 0.08)),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 })
-  );
-  frame.rotation.y = Math.PI / 4;
-  group.add(frame);
-  const stem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.018, 0.018, 0.34, 8),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 })
-  );
-  stem.position.y = 0.22;
-  group.add(stem);
+
+  // Solid needle — matches the today-marker's 0.02 needle weight, shorter
+  // (secondary marker, not the primary today reference).
+  const needleGeo = new THREE.BoxGeometry(0.02, 0.5, 0.02);
+  const needleMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    metalness: 0,
+    roughness: 0.35,
+  });
+  const needle = new THREE.Mesh(needleGeo, needleMat);
+  needle.position.y = 0.25 + CRITICAL_MARKER_Y_OFFSET;
+  group.add(needle);
+
+  // Solid filled flag disc at the top — not an edges-only box.
+  const flagGeo = new THREE.CircleGeometry(0.1, 20);
+  const flagMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(color),
+    side: THREE.DoubleSide,
+  });
+  const flag = new THREE.Mesh(flagGeo, flagMat);
+  flag.position.set(0.06, 0.46 + CRITICAL_MARKER_Y_OFFSET, 0);
+  group.add(flag);
+
+  // Small collar grounding it to the tube surface (offset up, not embedded).
+  const collarGeo = new THREE.TorusGeometry(0.1, 0.014, 12, 40);
+  const collarMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    metalness: 0,
+    roughness: 0.35,
+  });
+  const collar = new THREE.Mesh(collarGeo, collarMat);
+  collar.rotation.x = Math.PI / 2;
+  collar.position.y = CRITICAL_MARKER_Y_OFFSET;
+  group.add(collar);
+
   group.userData.kind = "milestone";
-  group.userData.frame = frame;
+  group.userData.needleMat = needleMat;
+  group.userData.flagMat = flagMat;
+  group.userData.collarMat = collarMat;
   group.userData.state = spec.state;
   return group;
 }
 
-export function createProjectedEmphasisLine(
-  points: THREE.Vector3[],
-  isCritical: boolean
-): THREE.Line {
-  const line = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(points),
-    new THREE.LineDashedMaterial({
-      color: isCritical ? "#2b2824" : "#b8aa98",
-      dashSize: isCritical ? 0.28 : 0.18,
-      gapSize: isCritical ? 0.18 : 0.24,
-      transparent: true,
-      opacity: isCritical ? 0.9 : 0.5,
-      depthWrite: false,
-    })
+/**
+ * Solid accent-tube overlay along a critical-path segment of the projected
+ * curve — replaces a hairline THREE.Line (1px regardless of settings) that
+ * sat only 0.055 world-units off a glossy 0.07-radius tube and read as
+ * nothing. Wider than the base projected tube so it reads as a highlighted
+ * band, not a decal riding its surface.
+ */
+const CRITICAL_ACCENT_RADIUS = 0.095;
+
+export function createCriticalPathAccentTube(
+  points: THREE.Vector3[]
+): THREE.Mesh {
+  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const tubular = Math.max(24, Math.floor(curve.getLength() * 8));
+  const geometry = new THREE.TubeGeometry(
+    curve,
+    tubular,
+    CRITICAL_ACCENT_RADIUS,
+    TUBE_RADIAL,
+    false
   );
-  line.computeLineDistances();
-  line.position.z += 0.055;
-  line.name = isCritical ? "critical-projected-segment" : "slack-projected-segment";
-  line.userData.kind = "projected-emphasis";
-  return line;
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color("#b34c2e"),
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "critical-projected-segment";
+  mesh.userData.kind = "critical-accent";
+  return mesh;
 }
 
-export function updateProjectedEmphasisLine(
-  line: THREE.Line,
-  points: THREE.Vector3[],
-  isCritical: boolean
+export function updateCriticalPathAccentTube(
+  mesh: THREE.Mesh,
+  points: THREE.Vector3[]
 ): void {
-  line.geometry.dispose();
-  line.geometry = new THREE.BufferGeometry().setFromPoints(points);
-  line.computeLineDistances();
-  const material = line.material as THREE.LineDashedMaterial;
-  material.color.set(isCritical ? "#2b2824" : "#b8aa98");
-  material.opacity = isCritical ? 0.9 : 0.5;
-  line.name = isCritical ? "critical-projected-segment" : "slack-projected-segment";
+  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const tubular = Math.max(24, Math.floor(curve.getLength() * 8));
+  mesh.geometry.dispose();
+  mesh.geometry = new THREE.TubeGeometry(
+    curve,
+    tubular,
+    CRITICAL_ACCENT_RADIUS,
+    TUBE_RADIAL,
+    false
+  );
 }
 
 function createCountBadgeTexture(count: number): THREE.CanvasTexture {

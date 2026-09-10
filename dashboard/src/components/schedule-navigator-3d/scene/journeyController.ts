@@ -27,20 +27,21 @@ import {
 import {
   createActualTube,
   createClusterShard,
+  createCriticalPathAccentTube,
   createCriticalPathMarker,
+  CRITICAL_MARKER_Y_OFFSET,
   createForecastShard,
   createGhostRouteLine,
   createOrUpdateProjectedTube,
   createOrUpdateTakenRouteTube,
   createPlannedTube,
-  createProjectedEmphasisLine,
   createProjectedDashLine,
   createRoutePreviewLine,
   createTodayMarker,
   createMilestoneMarker,
   routePreviewLiftAt,
+  updateCriticalPathAccentTube,
   updateProjectedDashLine,
-  updateProjectedEmphasisLine,
   updateRoutePreviewLine,
 } from "./pathMeshes";
 
@@ -147,6 +148,10 @@ export interface JourneyController {
   /** Enable shard hover hit-testing (pointer cursor + brighten). */
   setHoverEnabled: (active: boolean) => void;
   setShardFilter: (filter: { categories: DelayCategory[]; severities: DelaySeverity[] }) => void;
+  /** Toggle the critical-path accent tube + diamond markers on/off. Default
+   * off — same opt-in pattern as setShardFilter, .visible-only, no effect
+   * on base tubes/shards/milestones. */
+  setCriticalPathVisible: (enabled: boolean) => void;
   /** Move inspection playhead; does not hide/reveal path geometry. */
   setScrubIso: (iso: string, opts?: { reframe?: boolean }) => void;
   setScrubbing: (active: boolean) => void;
@@ -318,15 +323,31 @@ export function createJourneyController(
     });
   }
 
-  const projectedEmphasisLines = model.projectedSegments.map((segment) => {
-    const points = Array.from({ length: 18 }, (_, index) => {
+  // Default OFF — critical-path visuals (accent tube + diamond markers) are
+  // opt-in via a toggle chip, same mechanism as the shard category/severity
+  // filters below. Milestones are unaffected and always visible.
+  let criticalPathVisualsEnabled = false;
+
+  function segmentPoints(segment: { startX: number; endX: number }) {
+    return Array.from({ length: 18 }, (_, index) => {
       const x = THREE.MathUtils.lerp(segment.startX, segment.endX, index / 17);
       return curvePointAtX(model.projectedCurve, x).position;
     });
-    const line = createProjectedEmphasisLine(points, segment.isCritical);
-    root.add(line);
-    return line;
-  });
+  }
+
+  // One entry per projected segment, aligned by index; only critical
+  // segments carry a mesh — slack segments get no overlay at all. The array
+  // itself stays a fixed size (mirroring model.projectedSegments) so
+  // refreshCriticalMarkers can create/dispose meshes in place as
+  // segments flip between critical and slack after a route commit.
+  const criticalAccentTubes: { mesh: THREE.Mesh | null }[] =
+    model.projectedSegments.map((segment) => {
+      if (!segment.isCritical) return { mesh: null };
+      const mesh = createCriticalPathAccentTube(segmentPoints(segment));
+      mesh.visible = criticalPathVisualsEnabled;
+      root.add(mesh);
+      return { mesh };
+    });
 
   const criticalGroups = model.criticalPath.map((critical) => {
     const g = createCriticalPathMarker({
@@ -334,9 +355,20 @@ export function createJourneyController(
       position: critical.position,
       isCritical: critical.isCritical,
     });
+    g.visible = critical.isCritical && criticalPathVisualsEnabled;
     root.add(g);
     return g;
   });
+
+  function applyCriticalPathVisibility() {
+    criticalGroups.forEach((group, index) => {
+      const isCritical = model.criticalPath[index]?.isCritical ?? false;
+      group.visible = isCritical && criticalPathVisualsEnabled;
+    });
+    criticalAccentTubes.forEach((entry) => {
+      if (entry.mesh) entry.mesh.visible = criticalPathVisualsEnabled;
+    });
+  }
 
   const milestoneGroups = model.milestones.map((milestone) => {
     const g = createMilestoneMarker({
@@ -372,24 +404,31 @@ export function createJourneyController(
       }];
     });
     model.projectedSegments.forEach((segment, index) => {
-      const line = projectedEmphasisLines[index];
-      if (!line) return;
-      const points = Array.from({ length: 18 }, (_, pointIndex) => {
-        const x = THREE.MathUtils.lerp(segment.startX, segment.endX, pointIndex / 17);
-        return curvePointAtX(model.projectedCurve, x).position;
-      });
-      updateProjectedEmphasisLine(line, points, segment.isCritical);
+      const entry = criticalAccentTubes[index];
+      if (!entry) return;
+      if (segment.isCritical) {
+        const points = segmentPoints(segment);
+        if (entry.mesh) {
+          updateCriticalPathAccentTube(entry.mesh, points);
+        } else {
+          const mesh = createCriticalPathAccentTube(points);
+          mesh.visible = criticalPathVisualsEnabled;
+          root.add(mesh);
+          entry.mesh = mesh;
+        }
+      } else if (entry.mesh) {
+        root.remove(entry.mesh);
+        entry.mesh.geometry.dispose();
+        (entry.mesh.material as THREE.Material).dispose();
+        entry.mesh = null;
+      }
     });
     criticalGroups.forEach((group, index) => {
       const next = model.criticalPath[index];
       if (!next) return;
       group.position.copy(next.position);
-      const frame = group.userData.frame as THREE.LineSegments | undefined;
-      const material = frame?.material as THREE.LineBasicMaterial | undefined;
-      if (material) {
-        material.color.set(next.isCritical ? "#b34c2e" : "#9a958c");
-        material.opacity = next.isCritical ? 0.92 : 0.3;
-      }
+      group.position.y += CRITICAL_MARKER_Y_OFFSET;
+      group.visible = next.isCritical && criticalPathVisualsEnabled;
     });
     model.milestones.forEach((milestone, index) => {
       const curve = milestone.state === "reached" ? model.actualCurve : model.projectedCurve;
@@ -1514,6 +1553,10 @@ export function createJourneyController(
     setShardFilter: (filter) => {
       shardFilter = filter;
       applyShardFilter();
+    },
+    setCriticalPathVisible: (enabled: boolean) => {
+      criticalPathVisualsEnabled = enabled;
+      applyCriticalPathVisibility();
     },
     setScrubIso,
     setScrubbing: (active: boolean) => {
