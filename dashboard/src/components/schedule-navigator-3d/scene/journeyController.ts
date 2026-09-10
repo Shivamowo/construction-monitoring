@@ -7,11 +7,14 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import gsap from "gsap";
 import { CustomEase } from "gsap/CustomEase";
 import type {
+  DelayCategory,
+  DelaySeverity,
   NavigatorWaypoint,
   ScheduleNavigatorPayload,
 } from "@/lib/schedule-navigator/aggregate";
 import {
   buildCatchUpProjectedControls,
+  computeCriticalPath,
   buildNavigatorPathModel,
   buildRoutePreviewPoints,
   computeCascadedSchedule,
@@ -24,15 +27,19 @@ import {
 import {
   createActualTube,
   createClusterShard,
+  createCriticalPathMarker,
   createForecastShard,
   createGhostRouteLine,
   createOrUpdateProjectedTube,
   createOrUpdateTakenRouteTube,
   createPlannedTube,
+  createProjectedEmphasisLine,
   createProjectedDashLine,
   createRoutePreviewLine,
   createTodayMarker,
+  createMilestoneMarker,
   updateProjectedDashLine,
+  updateProjectedEmphasisLine,
   updateRoutePreviewLine,
 } from "./pathMeshes";
 import {
@@ -133,6 +140,7 @@ export interface JourneyController {
   zoomOut: () => void;
   /** Enable shard hover hit-testing (pointer cursor + brighten). */
   setHoverEnabled: (active: boolean) => void;
+  setShardFilter: (filter: { categories: DelayCategory[]; severities: DelaySeverity[] }) => void;
   /** Move inspection playhead; does not hide/reveal path geometry. */
   setScrubIso: (iso: string, opts?: { reframe?: boolean }) => void;
   setScrubbing: (active: boolean) => void;
@@ -271,6 +279,114 @@ export function createJourneyController(
     root.add(g);
     return g;
   });
+
+  let shardFilter: { categories: DelayCategory[]; severities: DelaySeverity[] } = {
+    categories: [],
+    severities: [],
+  };
+  const matchesShardFilter = (waypoint: NavigatorWaypoint) => {
+    const category = waypoint.delayCategory ?? "other";
+    const severity = waypoint.forecastRisk
+      ? waypoint.forecastRisk.riskLevel === "elevated" ? "severe" : "mild"
+      : waypoint.severity;
+    const matches = (
+      (shardFilter.categories.length === 0 || shardFilter.categories.includes(category)) &&
+      (shardFilter.severities.length === 0 || shardFilter.severities.includes(severity))
+    );
+    return matches;
+  };
+  function applyShardFilter() {
+    clusterGroups.forEach((group, index) => {
+      group.visible = model.clusters[index].items.some((item) => matchesShardFilter(item.waypoint));
+    });
+    forecastGroups.forEach((group, index) => {
+      group.visible = matchesShardFilter(model.forecastShards[index].waypoint);
+    });
+  }
+
+  const projectedEmphasisLines = model.projectedSegments.map((segment) => {
+    const points = Array.from({ length: 18 }, (_, index) => {
+      const x = THREE.MathUtils.lerp(segment.startX, segment.endX, index / 17);
+      return curvePointAtX(model.projectedCurve, x).position;
+    });
+    const line = createProjectedEmphasisLine(points, segment.isCritical);
+    root.add(line);
+    return line;
+  });
+
+  const criticalGroups = model.criticalPath.map((critical) => {
+    const g = createCriticalPathMarker({
+      id: critical.waypoint.id,
+      position: critical.position,
+      isCritical: critical.isCritical,
+    });
+    root.add(g);
+    return g;
+  });
+
+  const milestoneGroups = model.milestones.map((milestone) => {
+    const g = createMilestoneMarker({
+      id: milestone.waypoint.id,
+      position: milestone.position,
+      state: milestone.state,
+    });
+    root.add(g);
+    return g;
+  });
+
+  function refreshCriticalMarkers() {
+    const critical = computeCriticalPath(model.waypoints, appliedRecoveries);
+    const cascaded = computeCascadedSchedule(model.waypoints, appliedRecoveries);
+    model.criticalPath = critical.map((entry) => {
+      const point = curvePointAtX(
+        model.projectedCurve,
+        dateToX(entry.waypoint.projectedEnd, model.timelineScale)
+      );
+      return { ...entry, position: point.position };
+    });
+    model.projectedSegments = model.waypoints.flatMap((waypoint, waypointIndex) => {
+      if (new Date(`${waypoint.plannedEnd}T00:00:00Z`).getTime() <= new Date(`${model.todayIso}T00:00:00Z`).getTime()) return [];
+      const previous = model.waypoints[waypointIndex - 1];
+      const startIso = previous && new Date(`${previous.plannedEnd}T00:00:00Z`).getTime() > new Date(`${model.todayIso}T00:00:00Z`).getTime()
+        ? cascaded[waypointIndex - 1].projectedEnd
+        : model.todayIso;
+      return [{
+        waypointIndex,
+        startX: dateToX(startIso, model.timelineScale),
+        endX: dateToX(cascaded[waypointIndex].projectedEnd, model.timelineScale),
+        isCritical: model.criticalPath[waypointIndex]?.isCritical ?? false,
+      }];
+    });
+    model.projectedSegments.forEach((segment, index) => {
+      const line = projectedEmphasisLines[index];
+      if (!line) return;
+      const points = Array.from({ length: 18 }, (_, pointIndex) => {
+        const x = THREE.MathUtils.lerp(segment.startX, segment.endX, pointIndex / 17);
+        return curvePointAtX(model.projectedCurve, x).position;
+      });
+      updateProjectedEmphasisLine(line, points, segment.isCritical);
+    });
+    criticalGroups.forEach((group, index) => {
+      const next = model.criticalPath[index];
+      if (!next) return;
+      group.position.copy(next.position);
+      const frame = group.userData.frame as THREE.LineSegments | undefined;
+      const material = frame?.material as THREE.LineBasicMaterial | undefined;
+      if (material) {
+        material.color.set(next.isCritical ? "#b34c2e" : "#9a958c");
+        material.opacity = next.isCritical ? 0.92 : 0.3;
+      }
+    });
+    model.milestones.forEach((milestone, index) => {
+      const curve = milestone.state === "reached" ? model.actualCurve : model.projectedCurve;
+      const point = curvePointAtX(
+        curve,
+        dateToX(milestone.waypoint.projectedEnd, model.timelineScale)
+      );
+      milestone.position.copy(point.position);
+      milestoneGroups[index]?.position.copy(point.position);
+    });
+  }
 
   // Visual-only depth-bias: when a shard's actual curve position coincides with
   // the today marker (an in-progress delay pinned at "today") or with another
@@ -548,6 +664,39 @@ export function createJourneyController(
     killIdleTweens();
   }
 
+  function flyToFocus(focusLocal: THREE.Vector3) {
+    const focus = focusLocal.clone().applyMatrix4(root.matrixWorld);
+    const target = focus.clone().add(new THREE.Vector3(0, 0.3, 0));
+    const camPos = focus.clone().add(new THREE.Vector3(-4.8, 4.6, 8.8));
+
+    idleActive = false;
+    killIdleTweens();
+    gsap.killTweensOf(camTweenProxy);
+    camTweenProxy.camX = camera.position.x;
+    camTweenProxy.camY = camera.position.y;
+    camTweenProxy.camZ = camera.position.z;
+    camTweenProxy.tx = controls.target.x;
+    camTweenProxy.ty = controls.target.y;
+    camTweenProxy.tz = controls.target.z;
+
+    gsap.to(camTweenProxy, {
+      camX: camPos.x,
+      camY: camPos.y,
+      camZ: camPos.z,
+      tx: target.x,
+      ty: target.y,
+      tz: target.z,
+      duration: 1.05,
+      ease: EASE.camera,
+      overwrite: true,
+      onUpdate: () => {
+        camera.position.set(camTweenProxy.camX, camTweenProxy.camY, camTweenProxy.camZ);
+        controls.target.set(camTweenProxy.tx, camTweenProxy.ty, camTweenProxy.tz);
+        controls.update();
+      },
+    });
+  }
+
   controls.addEventListener("start", () => {
     userOrbiting = true;
     pauseIdleForOrbit();
@@ -625,6 +774,16 @@ export function createJourneyController(
     const routeEntry = findAlternateRouteFromObject(hits[0].object);
     if (routeEntry) {
       const wp = model.waypoints.find((w) => w.id === routeEntry.waypointId);
+      const positions = routeEntry.line.geometry.getAttribute("position");
+      if (positions?.count) {
+        const focus = new THREE.Vector3().fromBufferAttribute(
+          positions,
+          Math.floor(positions.count / 2)
+        );
+        routeEntry.line.localToWorld(focus);
+        root.worldToLocal(focus);
+        flyToFocus(focus);
+      }
       if (wp) callbacks.onRouteSelect?.(wp);
       return;
     }
@@ -633,6 +792,7 @@ export function createJourneyController(
     if (forecastIndex >= 0) {
       selectedForecastIndex = forecastIndex;
       selectedClusterIndex = -1;
+      flyToFocus(model.forecastShards[forecastIndex].position);
       callbacks.onForecastSelect?.(model.forecastShards[forecastIndex].waypoint);
       return;
     }
@@ -643,6 +803,7 @@ export function createJourneyController(
     selectedClusterIndex = clusterIndex;
     selectedForecastIndex = -1;
     const cluster = model.clusters[clusterIndex];
+    flyToFocus(cluster.position);
     callbacks.onClusterSelect({
       cluster,
       clusterIndex,
@@ -963,6 +1124,9 @@ export function createJourneyController(
       { ...appliedRecoveries, [waypointId]: daysRecovered },
       scale
     );
+    if (targets?.length) {
+      flyToFocus(targets[Math.min(2, targets.length - 1)]);
+    }
     if (!targets || targets.length < 2) return null;
     return buildRoutePreviewPoints(shardPosition, targets);
   }
@@ -1080,7 +1244,6 @@ export function createJourneyController(
     const newProjectedEndIso = lastCascaded.projectedEnd;
     const newDaysBehind = lastCascaded.cascadeAfter;
     model.timeline.projectedEnd = newProjectedEndIso;
-
     const targets = buildCatchUpProjectedControls(
       model.waypoints,
       model.timeline,
@@ -1160,6 +1323,7 @@ export function createJourneyController(
         // Lands settled in confident blue, not mid-morph amber.
         routeTakenActive = true;
         rebuildProjectedFromControls();
+        refreshCriticalMarkers();
 
         if (projectedLabel) {
           projectedLabel.el.dataset.iso = newProjectedEndIso;
@@ -1293,6 +1457,10 @@ export function createJourneyController(
         hoveredClusterIndex = -1;
         canvas.style.cursor = "grab";
       }
+    },
+    setShardFilter: (filter) => {
+      shardFilter = filter;
+      applyShardFilter();
     },
     setScrubIso,
     setScrubbing: (active: boolean) => {

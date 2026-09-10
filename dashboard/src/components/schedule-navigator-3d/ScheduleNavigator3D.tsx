@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import gsap from "gsap";
 import type {
+  DelayCategory,
+  DelaySeverity,
   NavigatorWaypoint,
   ScheduleNavigatorPayload,
 } from "@/lib/schedule-navigator/aggregate";
-import { buildStatusSummary } from "@/lib/schedule-navigator/statusSummary";
 import {
   buildScrubSnapshot,
   formatScrubDay,
@@ -35,11 +36,11 @@ function severityRank(s: NavigatorWaypoint["severity"]): number {
   return s === "severe" ? 2 : s === "mild" ? 1 : 0;
 }
 
-function formatSlip(days: number | null): string {
-  if (days == null) return "—";
-  if (days === 0) return "On plan";
-  if (days > 0) return `${days}d behind`;
-  return `${Math.abs(days)}d ahead`;
+function routeScore(waypoint: NavigatorWaypoint): number {
+  const plan = waypoint.catchUpPlan;
+  if (!plan || plan.daysRecovered <= 0) return -Infinity;
+  const costBurden = Math.max(1, plan.resourceCost.split(",").length + plan.resourceCost.length / 100);
+  return plan.daysRecovered / costBurden;
 }
 
 export function ScheduleNavigator3D() {
@@ -48,7 +49,6 @@ export function ScheduleNavigator3D() {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const axisOverlayRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<JourneyController | null>(null);
-  const scrubBodyRef = useRef<HTMLDivElement | null>(null);
   const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
   const legendRef = useRef<HTMLDivElement | null>(null);
   const isDraggingScrubberRef = useRef(false);
@@ -67,7 +67,8 @@ export function ScheduleNavigator3D() {
   const [bootProgress, setBootProgress] = useState(0);
   const [scrubIso, setScrubIso] = useState<string | null>(null);
   const [projectedEndIso, setProjectedEndIso] = useState<string | null>(null);
-  const [activeDaysBehind, setActiveDaysBehind] = useState<number | null>(null);
+  const [activeCategories, setActiveCategories] = useState<DelayCategory[]>([]);
+  const [activeSeverities, setActiveSeverities] = useState<DelaySeverity[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,7 +169,6 @@ export function ScheduleNavigator3D() {
           daysBehind,
         }) => {
           setProjectedEndIso(projectedEnd);
-          setActiveDaysBehind(daysBehind);
           if (daysRecovered <= 0) {
             setStatus("No catch-up plan on this delay — projected path unchanged");
             return;
@@ -204,6 +204,13 @@ export function ScheduleNavigator3D() {
   }, [data]);
 
   useEffect(() => {
+    controllerRef.current?.setShardFilter({
+      categories: activeCategories,
+      severities: activeSeverities,
+    });
+  }, [activeCategories, activeSeverities]);
+
+  useEffect(() => {
     if ((!selected && !selectedRoute) || !cardRef.current) return;
     gsap.fromTo(
       cardRef.current,
@@ -226,16 +233,14 @@ export function ScheduleNavigator3D() {
   }, [data]);
 
   useEffect(() => {
-    if (!scrubBodyRef.current || !scrubIso) return;
-    gsap.fromTo(
-      scrubBodyRef.current,
-      { autoAlpha: 0.4 },
-      { autoAlpha: 1, duration: 0.28, ease: "power2.out" }
-    );
   }, [scrubIso]);
 
-  const summary = useMemo(
-    () => (data ? buildStatusSummary(data) : null),
+  const recommendedRoute = useMemo(
+    () => data
+      ? data.waypoints
+          .filter((waypoint) => waypoint.catchUpPlan && waypoint.catchUpPlan.daysRecovered > 0)
+          .sort((a, b) => routeScore(b) - routeScore(a))[0] ?? null
+      : null,
     [data]
   );
 
@@ -334,7 +339,7 @@ export function ScheduleNavigator3D() {
     );
   }
 
-  if (!data || !summary || !scrub || !timelineEffective) {
+  if (!data || !scrub || !timelineEffective) {
     return (
       <div className={styles.root}>
         <div className={styles.preloader} aria-busy="true">
@@ -360,7 +365,21 @@ export function ScheduleNavigator3D() {
     selected?.catchUpPlan && selected.catchUpPlan.daysRecovered > 0
   );
   const routeTaken = Boolean(selectedRoute && takenRoutes.has(selectedRoute.id));
-  const effectiveDaysBehind = activeDaysBehind ?? summary.daysBehind;
+
+  const toggleCategory = (category: DelayCategory) => {
+    setActiveCategories((current) =>
+      current.includes(category)
+        ? current.filter((item) => item !== category)
+        : [...current, category]
+    );
+  };
+  const toggleSeverity = (severity: DelaySeverity) => {
+    setActiveSeverities((current) =>
+      current.includes(severity)
+        ? current.filter((item) => item !== severity)
+        : [...current, severity]
+    );
+  };
 
   const currentScrubFraction = scrubIsoToFraction(
     scrub.scrubIso,
@@ -375,183 +394,24 @@ export function ScheduleNavigator3D() {
     timelineEffective
   );
 
-  const slipClass =
-    effectiveDaysBehind == null
-      ? ""
-      : effectiveDaysBehind > 0
-        ? styles.statWarn
-        : effectiveDaysBehind < 0
-          ? styles.statGood
-          : styles.statNeutral;
-  const scrubSlipClass =
-    scrub.daysBehind > 0
-      ? styles.statWarn
-      : scrub.daysBehind < 0
-        ? styles.statGood
-        : styles.statNeutral;
-
   return (
     <div className={styles.root}>
-      <header className={`${styles.chromePanel} ${styles.statusBar}`}>
-        <div className={styles.statusLead}>
-          <p className={styles.kicker}>Schedule status · as-of {summary.asOf ?? "—"}</p>
-          <h2 className={styles.projectName}>{summary.projectName}</h2>
-        </div>
-        <dl className={styles.statGrid}>
-          <div className={styles.stat}>
-            <dt>
-              Schedule
-              <ProvenanceBadge tag={summary.daysBehindProvenance} compact />
-            </dt>
-            <dd className={slipClass}>
-              {formatSlip(effectiveDaysBehind)}
-              <span className={styles.statHint}>
-                projected {formatDay(effectiveProjectedEnd)}
-              </span>
-            </dd>
-          </div>
-          <div className={styles.stat}>
-            <dt>% complete</dt>
-            <dd className={styles.statMuted}>Unavailable</dd>
-          </div>
-          <div className={styles.stat}>
-            <dt>Next milestone</dt>
-            <dd>
-              {summary.nextMilestone?.taskNameEn ?? "—"}
-              {summary.nextMilestone ? (
-                <span className={styles.statHint}>
-                  planned {summary.nextMilestone.plannedEnd}
-                </span>
-              ) : null}
-            </dd>
-          </div>
-          <div className={styles.stat}>
-            <dt>
-              Worst delay
-              <ProvenanceBadge tag="FORGED" compact />
-            </dt>
-            <dd className={summary.worstUnresolvedDelay ? styles.statWarn : ""}>
-              {summary.worstUnresolvedDelay
-                ? `${summary.worstUnresolvedDelay.taskNameEn} · +${summary.worstUnresolvedDelay.localDelayDays}d`
-                : "None"}
-            </dd>
-          </div>
-        </dl>
-      </header>
-
-      <section
-        className={
-          scrub.isProjectedZone
-            ? `${styles.chromePanel} ${styles.scrubBar} ${styles.scrubBarProjected}`
-            : `${styles.chromePanel} ${styles.scrubBar}`
-        }
-        aria-label="Time-state inspection"
-      >
-        <p
-          className={
-            scrub.isProjectedZone
-              ? styles.scrubProjectedBanner
-              : `${styles.scrubProjectedBanner} ${styles.scrubProjectedBannerHidden}`
-          }
-          role="status"
-          aria-hidden={!scrub.isProjectedZone}
-        >
-          Projected — not yet actual
-        </p>
-        <div className={styles.scrubBody} ref={scrubBodyRef}>
-          <div className={styles.statusLead}>
-            <p className={styles.kicker}>
-              Inspecting · {formatScrubDay(scrub.scrubIso)}
-            </p>
-            <p className={styles.scrubLead}>
-              State as of playhead
-              {scrub.scrubIso === scrub.todayIso ? " (today)" : ""}
-            </p>
-          </div>
-          <dl
-            className={
-              scrub.isProjectedZone
-                ? `${styles.scrubStatGrid} ${styles.scrubStatGridProjected}`
-                : styles.scrubStatGrid
-            }
-          >
-            <div className={styles.stat}>
-              <dt>
-                Schedule
-                <ProvenanceBadge tag={scrub.daysBehindProvenance} compact />
-              </dt>
-              <dd className={scrubSlipClass}>{formatSlip(scrub.daysBehind)}</dd>
-            </div>
-            <div className={styles.stat}>
-              <dt>Complete</dt>
-              <dd>
-                {scrub.complete.length}
-                <span className={styles.statHint}>
-                  {scrub.complete.length === 0
-                    ? "None finished yet"
-                    : scrub.complete
-                        .slice(-2)
-                        .map((w) => w.taskNameEn)
-                        .join(" · ")}
-                </span>
-              </dd>
-            </div>
-            <div className={styles.stat}>
-              <dt>Pending</dt>
-              <dd>
-                {scrub.pending.length}
-                <span className={styles.statHint}>
-                  {scrub.pending[0]
-                    ? `Next · ${scrub.pending[0].taskNameEn}`
-                    : "All complete"}
-                </span>
-              </dd>
-            </div>
-            <div className={styles.stat}>
-              <dt>
-                Delays known
-                <ProvenanceBadge tag="FORGED" compact />
-              </dt>
-              <dd className={scrub.worstDelay ? styles.statWarn : ""}>
-                {scrub.delaysKnown.length === 0
-                  ? "None"
-                  : scrub.worstDelay
-                    ? `${scrub.delaysKnown.length} · worst ${scrub.worstDelay.taskNameEn} +${scrub.worstDelay.localDelayDays}d`
-                    : String(scrub.delaysKnown.length)}
-              </dd>
-            </div>
-          </dl>
-          {scrub.delaysKnown.length > 0 && (
-            <ul className={styles.scrubDelayList}>
-              {[...scrub.delaysKnown]
-                .sort((a, b) => b.localDelayDays - a.localDelayDays)
-                .map((w) => (
-                  <li key={w.id}>
-                    <button
-                      type="button"
-                      className={styles.scrubDelayBtn}
-                      onClick={() => {
-                        setSelected(w);
-                        setSelectedRoute(null);
-                        setClusterItems([]);
-                        setRecoveryOpen(false);
-                        setStatus("Delay detail open");
-                      }}
-                    >
-                      <span>+{w.localDelayDays}d</span>
-                      <span>{w.taskNameEn}</span>
-                    </button>
-                  </li>
-                ))}
-            </ul>
-          )}
-        </div>
-      </section>
-
       <div className={styles.stage}>
         <div className={styles.viewportColumn}>
           <div className={styles.viewport} ref={hostRef}>
           <canvas ref={canvasRef} className={styles.canvas} />
+          <div className={styles.filterOverlay} aria-label="Delay shard filters">
+            <span className={styles.filterLabel}>Shards</span>
+            <button type="button" className={!activeCategories.length ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={!activeCategories.length} onClick={() => setActiveCategories([])}>All</button>
+            {(["customs", "weather", "labor"] as DelayCategory[]).map((category) => (
+              <button key={category} type="button" className={activeCategories.includes(category) ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={activeCategories.includes(category)} onClick={() => toggleCategory(category)}>{category}</button>
+            ))}
+            <span className={styles.filterDivider} />
+            {(["mild", "severe"] as DelaySeverity[]).map((severity) => (
+              <button key={severity} type="button" className={activeSeverities.includes(severity) ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={activeSeverities.includes(severity)} onClick={() => toggleSeverity(severity)}>{severity}</button>
+            ))}
+            <span className={styles.filterProvenance}>DERIVED</span>
+          </div>
           <div
             ref={axisOverlayRef}
             className={styles.axisOverlay}
@@ -592,10 +452,6 @@ export function ScheduleNavigator3D() {
           <div className={styles.hud}>
             <p className={styles.status}>
               <strong>{status}</strong>
-            </p>
-            <p>
-              {data.waypoints.length} waypoints · {shardTotal} delays ·{" "}
-              {clusterTotal} clusters
             </p>
           </div>
 
@@ -761,6 +617,7 @@ export function ScheduleNavigator3D() {
       </div>
 
       <aside className={styles.sidePanel} aria-label="Route detail and legend">
+        {(selectedRoute || selected) && (
         <div className={styles.routeSection} aria-live="polite" ref={cardRef}>
           {selectedRoute ? (
             <div className={styles.card}>
@@ -783,6 +640,19 @@ export function ScheduleNavigator3D() {
                   ×
                 </button>
               </div>
+              {recommendedRoute?.id === selectedRoute.id && (
+                <div className={styles.recommendationBadge}>
+                  Computed suggestion · DERIVED
+                  <span>
+                    Recommended: recovers {selectedRoute.catchUpPlan?.daysRecovered}d at the lowest computed cost burden.
+                  </span>
+                </div>
+              )}
+              {recommendedRoute && recommendedRoute.id !== selectedRoute.id && (
+                <div className={styles.recommendationNote}>
+                  Computed suggestion · DERIVED: <strong>{recommendedRoute.taskNameEn}</strong> recovers {recommendedRoute.catchUpPlan?.daysRecovered}d with the strongest recovery-to-cost score.
+                </div>
+              )}
 
               {selectedRoute.catchUpPlan && (
                 <>
@@ -948,30 +818,9 @@ export function ScheduleNavigator3D() {
                 </p>
               )}
             </div>
-          ) : (
-            <div className={styles.routeEmpty}>
-              <p className={styles.routeEmptyTitle}>{data.projectName}</p>
-              <p className={styles.routeEmptyBody}>
-                Click a delay indicator, predicted-risk marker, or an alternate-route
-                line to inspect it here.
-              </p>
-              <dl className={styles.routeEmptyStats}>
-                <div>
-                  <dt>Waypoints</dt>
-                  <dd>{data.waypoints.length}</dd>
-                </div>
-                <div>
-                  <dt>Delays</dt>
-                  <dd>{shardTotal}</dd>
-                </div>
-                <div>
-                  <dt>Clusters</dt>
-                  <dd>{clusterTotal}</dd>
-                </div>
-              </dl>
-            </div>
-          )}
+          ) : null}
         </div>
+        )}
 
         <div className={styles.legendSection} ref={legendRef}>
           <p className={styles.legendTitle}>Legend</p>
@@ -1002,6 +851,15 @@ export function ScheduleNavigator3D() {
             </li>
             <li>
               <i className={styles.swatchForecast} /> Predicted risk
+            </li>
+            <li>
+              <i className={styles.swatchCritical} /> Critical path driver · zero float
+            </li>
+            <li>
+              <i className={styles.swatchSlack} /> Slack segment · DERIVED
+            </li>
+            <li>
+              <i className={styles.swatchMilestone} /> Structural milestone
             </li>
           </ul>
         </div>

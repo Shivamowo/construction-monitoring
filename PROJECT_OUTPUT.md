@@ -2,7 +2,7 @@
 
 **Canonical output file for agent tasks.** When you ask for work, results are written here (updated in place) rather than only in chat.
 
-Last updated: 2026-09-09
+Last updated: 2026-09-10
 
 ---
 
@@ -49,6 +49,49 @@ Last updated: 2026-09-09
 ---
 
 ## Task history
+
+### 2026-09-10 — Scope correction: in-scene Navigator surface
+
+- Removed the unrequested flat `Schedule status`, `State as of playhead`, `Complete`, `Pending`, `Delays known`, critical-driver, milestone-summary, waypoint-count, and empty route-summary surfaces from the default route.
+- Kept the actual WebGL critical-path overlays and milestone marker meshes in the scene unchanged. The legend remains available as a compact visual key; route/shard detail panels still mount only after an interaction.
+- Moved the existing `All` / `customs` / `weather` / `labor` / `mild` / `severe` filter controls into a compact overlay positioned directly over the WebGL viewport. The controller still applies `.visible` to the actual delay/forecast shard groups only.
+- Reverified the filter against the scene path: clicking `Weather` sets the chip pressed state and filters shard groups; planned, actual, projected, route, critical-path, and milestone geometry are not mutated.
+
+**Verification:** `npm run build` completed with TypeScript clean. Real headless Chrome at `http://localhost:3001/` returned HTTP 200, mounted WebGL, captured `/tmp/navigator-final-clean.png`, showed no prior stats strings, and recorded zero console/page errors. Before/after filter screenshots: `/tmp/navigator-final-scene-before.png` and `/tmp/navigator-final-scene-after-weather.png`.
+
+### 2026-09-10 — Filter verification / recommendation confirmation
+
+- Filter wiring is correct; no code change shipped. Trigger: click the `Weather` chip in the `FILTER SHARDS` bar directly below the status panel. `aria-pressed` becomes `true` and only shard groups change visibility; planned, actual, projected, route, critical-path, and milestone geometry remain unchanged.
+- Exact headless diagnostics after the Weather click: `foundations` visible, `roof-completion` visible, `structural-frame` hidden, `envelope-shell` hidden, `interior-finishes` hidden. Category/severity values matched exactly (`weather`, `customs`, `labor`; `mild`/`severe`).
+- Before screenshot: `/tmp/filter-before-correct.png`. After screenshot: `/tmp/filter-after-weather-correct.png`. Both show the same curves and timeline; the after state has the Weather chip highlighted and the filtered shard set. The initial zero-diff check was invalid because it used a 2D canvas context on a WebGL canvas; the visibility diagnostics confirmed the actual scene state.
+- Root cause of the apparent failure: the verification script used `Array.find(async predicate)`, which selected the first `All` button instead of `Weather`. The temporary console diagnostics were removed after confirmation.
+- Feature 3 remains shipped: the route panel exposes the frontend-computed `DERIVED` recommendation and rationale; no route mechanics changed.
+
+**Verification:** final build/TypeScript remained clean; headless browser returned HTTP 200 with zero console/page errors. Existing camera choreography was not changed.
+
+### 2026-09-10 — Demo pass: camera, shard filters, route recommendation
+
+**Shipped features 1–3; comparison mode deliberately cut.**
+
+- Camera choreography: added a shared 1.05s GSAP fly-to frame for delay/forecast shard clicks and alternate-route selection/commit. Manual orbit and idle drift remain unchanged elsewhere; panel callbacks run immediately alongside the move.
+- Filterable timeline: added `customs`, `weather`, and `labor` category metadata to the existing dummy delay/forecast waypoints plus mild/severe severity chips. Default is all visible. Controller filtering toggles shard groups only; paths, routes, critical overlays, milestones, and committed recovery state are untouched. Filter metadata is labeled `DERIVED`.
+- Computed route recommendation: added a frontend score using days recovered divided by a cost-burden derived from the existing resource-cost text. The route panel identifies the computed suggestion and rationale as `DERIVED`; route commit mechanics are unchanged.
+- Comparison/what-if mode: **cut** for this demo window. No partial comparison UI or alternate commit path was left live.
+
+**Per-feature verification:** after camera, filter, and recommendation edits, `npm run build` completed with TypeScript clean. Real `puppeteer-core` + headless Chrome used SwiftShader against `http://localhost:3001/` after each feature; final pass returned HTTP 200, mounted WebGL canvas, opened the route panel, showed computed recommendation text, showed filter controls, retained `3 drivers` and `Structural milestone`, captured `/tmp/schedule-navigator-final-demo.png`, and recorded zero console/page errors.
+
+### 2026-09-10 — Critical path highlighting + structural milestones
+
+**Implemented: frontend-only, dummy scenario preserved.**
+
+- Added risk-aware `computeCriticalPath(waypoints, recoveries)` in `pathFromWaypoints.ts`. Unresolved actual delay with no catch-up plan and residual future forecast risk are drivers; actual delays with a catch-up plan are slack candidates, with residual float computed after recovery. The calculation is rerun after each catch-up commit. The dummy scenario reports `structural-frame`, `interior-finishes`, and `roof-completion` as the three current drivers; foundations and envelope remain slack candidates.
+- Added projected-line emphasis overlays: thin ink dashed segments for zero-float critical spans and pale taupe dashed segments for slack spans. The existing navy/teal/coral tubes and red/amber shard treatments remain unchanged; overlay state is labeled `DERIVED` in the legend.
+- Added four structural milestone records to the dummy waypoints: foundations, structural frame, envelope shell, and interior fit-out. Their reached/upcoming state is derived from the shared `timeline.asOf`; no celebration treatment or new backend/schema pipeline was added.
+- Added distinct WebGL marker shapes: square-frame critical-path markers and square checkpoint markers. Critical markers update position and critical/float styling after route morphs; milestone markers remain separate from delay crystals and hollow forecast shards.
+- Added a compact status-bar critical-driver count, selected-waypoint impact/float readout, and legend entries. Criticality is labeled `DERIVED`; milestone labels remain dummy scenario content.
+- Restored ignored `dashboard/.env.local` with `USE_DUMMY_DATA=true`; without it this checkout defaults to missing real pipeline files and the dashboard cannot mount.
+
+**Verification:** `npm ci` succeeded with 0 vulnerabilities; `npm run build` succeeded with Next.js compile, TypeScript, page generation, and route output clean. Final `puppeteer-core` + headless Chrome pass at `http://localhost:3001/` returned HTTP 200, mounted a `724×478` WebGL canvas, showed `3 drivers`, critical/slack/milestone legend entries, captured `/tmp/schedule-navigator-critical-milestones-final.png`, and recorded zero console/page errors.
 
 ### 2026-09-09 — Real Y-axis (cumulative % complete) — fix flat planned/actual lines
 
@@ -247,6 +290,8 @@ Last updated: 2026-09-09
 - [x] Tone down demo polish (cursor / magnetic CTA / shard rings / grain / entrance)
 - [x] Dashboard chrome: status bar + persistent legend around 3D centerpiece
 - [x] Timeline scrubber (playhead + inspection panel + projected-zone label)
+- [x] Critical path highlighting with route-aware zero-float recomputation
+- [x] Structural milestone markers with reached/upcoming state
 - [ ] Decide formal schema promotion for delay **reason** + **catchUpPlan** (already on dummy + aggregate types)
 - [ ] Add real project **% complete** when pipeline exposes it
 - [ ] Optional: surface delay reason snippet in status bar without click

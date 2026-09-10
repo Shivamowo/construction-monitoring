@@ -463,6 +463,91 @@ export function createForecastShard(spec: {
   return group;
 }
 
+/** A restrained bracket marker for a waypoint that contributes to projected finish. */
+export function createCriticalPathMarker(spec: {
+  id: string;
+  position: THREE.Vector3;
+  isCritical: boolean;
+}): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `critical-${spec.id}`;
+  group.position.copy(spec.position);
+  const color = spec.isCritical ? "#b34c2e" : "#9a958c";
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.34, 0.34, 0.04)),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: spec.isCritical ? 0.92 : 0.3 })
+  );
+  frame.rotation.x = Math.PI / 4;
+  group.add(frame);
+  group.userData.kind = "critical-path";
+  group.userData.frame = frame;
+  return group;
+}
+
+/** Square checkpoint marker, intentionally distinct from the crystal shards. */
+export function createMilestoneMarker(spec: {
+  id: string;
+  position: THREE.Vector3;
+  state: "reached" | "upcoming";
+}): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `milestone-${spec.id}`;
+  group.position.copy(spec.position);
+  const color = spec.state === "reached" ? "#2f7f6f" : "#b27a34";
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(0.28, 0.28, 0.08)),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 })
+  );
+  frame.rotation.y = Math.PI / 4;
+  group.add(frame);
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, 0.34, 8),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 })
+  );
+  stem.position.y = 0.22;
+  group.add(stem);
+  group.userData.kind = "milestone";
+  group.userData.frame = frame;
+  group.userData.state = spec.state;
+  return group;
+}
+
+export function createProjectedEmphasisLine(
+  points: THREE.Vector3[],
+  isCritical: boolean
+): THREE.Line {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(points),
+    new THREE.LineDashedMaterial({
+      color: isCritical ? "#2b2824" : "#b8aa98",
+      dashSize: isCritical ? 0.28 : 0.18,
+      gapSize: isCritical ? 0.18 : 0.24,
+      transparent: true,
+      opacity: isCritical ? 0.9 : 0.5,
+      depthWrite: false,
+    })
+  );
+  line.computeLineDistances();
+  line.position.z += 0.055;
+  line.name = isCritical ? "critical-projected-segment" : "slack-projected-segment";
+  line.userData.kind = "projected-emphasis";
+  return line;
+}
+
+export function updateProjectedEmphasisLine(
+  line: THREE.Line,
+  points: THREE.Vector3[],
+  isCritical: boolean
+): void {
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  line.computeLineDistances();
+  const material = line.material as THREE.LineDashedMaterial;
+  material.color.set(isCritical ? "#2b2824" : "#b8aa98");
+  material.opacity = isCritical ? 0.9 : 0.5;
+  line.name = isCritical ? "critical-projected-segment" : "slack-projected-segment";
+}
+
 function createCountBadgeTexture(count: number): THREE.CanvasTexture {
   const size = 128;
   const canvas = document.createElement("canvas");
