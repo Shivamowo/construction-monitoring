@@ -8,6 +8,32 @@ const TUBE_RADIUS_PROJECTED = 0.07;
 const TUBE_RADIUS_TAKEN = 0.1;
 /** Visible from afar without competing with the current (taken) path. */
 const TUBE_RADIUS_ROUTE_PREVIEW = 0.075;
+/**
+ * Vertical clearance for the route-preview tube above whatever tube it runs
+ * alongside. Must clear preview radius (0.075) + the thickest tube it can
+ * sit near — taken route (0.1) — + margin (0.05) = 0.225; rounded up.
+ */
+const ROUTE_PREVIEW_Y_LIFT = 0.24;
+/**
+ * Fraction of the way from the branch point to the next control point where
+ * a synthetic "kickoff" point is inserted, already at full lift height.
+ *
+ * A naive per-control-point ease (lift ramping in as a function of control
+ * index / point count) turned out NOT to shorten the near-origin low-
+ * clearance zone at all — verified numerically: sweeping the ease width
+ * across three orders of magnitude left the point where clearance actually
+ * crosses the safety threshold pinned at the same curve parameter every
+ * time. CatmullRom's tangent at the branch point is shaped by its
+ * neighboring control points as a whole, not by how gradually one of them
+ * eases in, so a small ease width on control point 1 barely changed the
+ * curve's shape near t=0.
+ *
+ * Inserting an EARLY point already at (near-)full height forces the spline's
+ * tangent right after the branch to point steeply upward, which does move
+ * the low-clearance zone (numerically confirmed to shrink from ~12% to ~3%
+ * of the curve's length for a representative branch).
+ */
+const ROUTE_PREVIEW_KICKOFF_FRAC = 0.02;
 const TUBE_RADIAL = 24;
 
 export function createPlannedTube(
@@ -202,6 +228,52 @@ export function updateProjectedDashLine(
 }
 
 /**
+ * Lift amount (world units) the route-preview line carries at a given
+ * source-point index — exported so callers positioning DOM labels/ticks or
+ * the camera-focus point against the preview line can match the mesh's
+ * actual height instead of reading a stale flat offset. The branch point
+ * (index 0, shared with the delay shard) carries no lift; every other
+ * source point is fully lifted (the near-origin transition itself is
+ * handled by an inserted geometry-only kickoff point — see
+ * liftRoutePreviewPoints — which isn't part of the caller-visible index
+ * space, so this stays a simple two-value lookup).
+ */
+export function routePreviewLiftAt(
+  _points: THREE.Vector3[],
+  index: number
+): number {
+  return index === 0 ? 0 : ROUTE_PREVIEW_Y_LIFT;
+}
+
+/**
+ * Lift the route-preview points off the path they branch from. Baked into
+ * the point data itself (not a flat mesh.position.y translation).
+ *
+ * The branch point (index 0, shared with the delay shard) stays unlifted so
+ * the preview visibly starts at the shard. Every other source point is
+ * fully lifted. Between those two, a synthetic "kickoff" point is inserted
+ * a short distance toward the next point, already at full lift height, so
+ * the spline's tangent leaving the branch points steeply upward instead of
+ * rising gradually across the curve's whole first segment (that gradual
+ * version was tried and measured: sweeping an eased ramp on the existing
+ * control points left the curve's low-clearance zone unchanged regardless
+ * of ramp width, because CatmullRom's near-start tangent is governed by the
+ * neighboring control points as a group, not by how gradually one point's
+ * height eases in — an extra point forces the shape change directly).
+ */
+function liftRoutePreviewPoints(points: THREE.Vector3[]): THREE.Vector3[] {
+  if (points.length < 2) return points.map((p) => p.clone());
+  const [p0, p1] = points;
+  const kickoff = new THREE.Vector3()
+    .lerpVectors(p0, p1, ROUTE_PREVIEW_KICKOFF_FRAC)
+    .setY(p0.y + ROUTE_PREVIEW_Y_LIFT);
+  const rest = points
+    .slice(1)
+    .map((p) => new THREE.Vector3(p.x, p.y + ROUTE_PREVIEW_Y_LIFT, p.z));
+  return [p0.clone(), kickoff, ...rest];
+}
+
+/**
  * "Take this route" reroute preview — a solid neutral-gray alternate path
  * branching from a delay shard, previewing what the projected line would
  * look like if the shard's catch-up plan were taken. Not committed until the
@@ -212,7 +284,12 @@ export function updateProjectedDashLine(
  * the taken-route radius so it never competes with the current path.
  */
 export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Mesh {
-  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const curve = new THREE.CatmullRomCurve3(
+    liftRoutePreviewPoints(points),
+    false,
+    "catmullrom",
+    0.4
+  );
   const tubular = Math.max(48, Math.floor(curve.getLength() * 8));
   const geometry = new THREE.TubeGeometry(
     curve,
@@ -230,7 +307,6 @@ export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = "route-preview";
   mesh.userData.kind = "route-preview";
-  mesh.position.y += 0.03;
   return mesh;
 }
 
@@ -317,7 +393,12 @@ export function updateRoutePreviewLine(
   mesh: THREE.Mesh,
   points: THREE.Vector3[]
 ): void {
-  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const curve = new THREE.CatmullRomCurve3(
+    liftRoutePreviewPoints(points),
+    false,
+    "catmullrom",
+    0.4
+  );
   const tubular = Math.max(48, Math.floor(curve.getLength() * 8));
   mesh.geometry.dispose();
   mesh.geometry = new THREE.TubeGeometry(

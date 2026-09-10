@@ -38,10 +38,16 @@ import {
   createRoutePreviewLine,
   createTodayMarker,
   createMilestoneMarker,
+  routePreviewLiftAt,
   updateProjectedDashLine,
   updateProjectedEmphasisLine,
   updateRoutePreviewLine,
 } from "./pathMeshes";
+
+/** Vertical clearance between the route-preview label chip and the (now
+ * lifted) preview tube it rides above — independent of the tube's own
+ * ROUTE_PREVIEW_Y_LIFT ramp, added on top of it via routePreviewLiftAt. */
+const ROUTE_PREVIEW_LABEL_CLEARANCE = 0.18;
 import {
   buildAxisAnchors,
   buildPctAxisAnchors,
@@ -777,10 +783,12 @@ export function createJourneyController(
       // Use the source centerline points, not raw geometry vertices — the
       // preview is a TubeGeometry mesh now, so its "position" attribute is
       // tube-surface (ring-of-vertices) data, not points along the curve.
+      // Points are raw (unlifted); add the same eased lift the mesh's own
+      // geometry bakes in so the camera frames where the tube actually is.
       if (routeEntry.points.length) {
-        const focus = routeEntry.points[
-          Math.floor(routeEntry.points.length / 2)
-        ].clone();
+        const midIndex = Math.floor(routeEntry.points.length / 2);
+        const focus = routeEntry.points[midIndex].clone();
+        focus.y += routePreviewLiftAt(routeEntry.points, midIndex);
         routeEntry.line.localToWorld(focus);
         root.worldToLocal(focus);
         flyToFocus(focus);
@@ -1149,9 +1157,16 @@ export function createJourneyController(
     line.userData.waypointId = waypointId;
     root.add(line);
 
-    const midPoint = points[Math.floor(points.length / 2)]
+    const midIndex = Math.floor(points.length / 2);
+    const midPoint = points[midIndex]
       .clone()
-      .add(new THREE.Vector3(0, 0.42, 0));
+      .add(
+        new THREE.Vector3(
+          0,
+          routePreviewLiftAt(points, midIndex) + ROUTE_PREVIEW_LABEL_CLEARANCE,
+          0
+        )
+      );
     // DOM label (not a WebGL sprite) so it runs through the SAME
     // syncAllProjectedLabels collision pass as every date/axis label —
     // a separate sprite-based label was the root cause of the undetected
@@ -1204,10 +1219,18 @@ export function createJourneyController(
       }
       updateRoutePreviewLine(entry.line, points);
       entry.points = points;
+      const midIndex = Math.floor(points.length / 2);
       entry.label.local.copy(
-        points[Math.floor(points.length / 2)]
+        points[midIndex]
           .clone()
-          .add(new THREE.Vector3(0, 0.42, 0))
+          .add(
+            new THREE.Vector3(
+              0,
+              routePreviewLiftAt(points, midIndex) +
+                ROUTE_PREVIEW_LABEL_CLEARANCE,
+              0
+            )
+          )
       );
     }
   }
