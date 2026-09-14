@@ -212,6 +212,17 @@ export function ScheduleNavigator3D() {
             `Catch-up applied: recovered ${daysRecovered} of ${daysLost}d (~${ratio}% of local gap). Projected finish moved to ${formatDay(projectedEnd)} (+${daysBehind}d). ${appliedCount} plan${appliedCount === 1 ? "" : "s"} active.`
           );
         },
+        onRevert: ({ historyIndex, projectedEnd, daysBehind, appliedWaypointIds }) => {
+          setProjectedEndIso(projectedEnd);
+          setTakenRoutes(new Set(appliedWaypointIds));
+          setSelectedRoute(null);
+          setRecoveryOpen(false);
+          setStatus(
+            historyIndex === 0
+              ? `Reverted to the original route. Projected finish back to ${formatDay(projectedEnd)} (+${daysBehind}d).`
+              : `Reverted to an earlier route. Projected finish now ${formatDay(projectedEnd)} (+${daysBehind}d).`
+          );
+        },
         onScrubChange: (iso) => {
           setScrubIso(iso);
         },

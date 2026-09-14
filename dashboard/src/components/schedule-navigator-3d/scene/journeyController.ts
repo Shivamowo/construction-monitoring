@@ -118,6 +118,24 @@ export interface JourneyCallbacks {
   }) => void;
   /** Fired when the scrub playhead date changes (inspection only — no geometry hide). */
   onScrubChange?: (iso: string) => void;
+  /** Fired after reverting to an earlier committed state via a ghost-route click. */
+  onRevert?: (payload: {
+    historyIndex: number;
+    projectedEnd: string;
+    daysBehind: number;
+    /** Waypoint ids whose routes are still taken after the revert. */
+    appliedWaypointIds: string[];
+  }) => void;
+}
+
+/** Pre-commit snapshot captured on each catch-up commit, for ghost-route revert. */
+interface CommitSnapshot {
+  /** Clone of appliedRecoveries as it was BEFORE this commit. */
+  appliedRecoveries: Record<string, number>;
+  /** Clone of model.projectedControlPoints as they were BEFORE this commit. */
+  controlPoints: THREE.Vector3[];
+  projectedEndIso: string;
+  ghostLine: THREE.Line;
 }
 
 export interface JourneyControllerOptions {
@@ -141,7 +159,8 @@ export interface JourneyController {
   dispose: () => void;
   /** Commit an alternate route: morph the real projected path onto it. */
   applyCatchUpPlan: (waypointId: string) => void;
-  resetCatchUpPlan: () => void;
+  /** Revert to the state captured before commit `historyIndex` (ghost-click). */
+  revertToHistory: (historyIndex: number) => void;
   /** Dolly the camera toward/away from its current target, clamped. */
   zoomIn: () => void;
   zoomOut: () => void;
@@ -264,8 +283,11 @@ export function createJourneyController(
   const projectedDash = createProjectedDashLine(model.projectedCurve);
   root.add(projectedDash);
 
-  // Ghosts of superseded projected-path states, one per commit, never removed.
+  // Ghosts of superseded projected-path states, one per commit. Each is
+  // clickable and reverts the path to the state captured in the matching
+  // commitHistory entry; ghosts after a revert target are discarded.
   const ghostLines: THREE.Line[] = [];
+  const commitHistory: CommitSnapshot[] = [];
 
   // Once any route is taken, the entire forward path becomes the confident
   // "confirmed" blue tube instead of the amber "at risk" one — rebuilt in
@@ -768,6 +790,7 @@ export function createJourneyController(
     if (routeTakenActive) {
       takenMesh = createOrUpdateTakenRouteTube(model.projectedCurve, takenMesh);
       if (!takenMesh.parent) root.add(takenMesh);
+      takenMesh.visible = true;
       projectedMesh.visible = false;
       projectedDash.visible = false;
     } else {
@@ -776,6 +799,11 @@ export function createJourneyController(
         projectedMesh
       );
       updateProjectedDashLine(projectedDash, model.projectedCurve);
+      // Reverting past every commit puts the path back "at risk", so undo the
+      // swap above — the taken tube hides and the amber projected one returns.
+      projectedMesh.visible = true;
+      projectedDash.visible = true;
+      if (takenMesh) takenMesh.visible = false;
     }
   }
 
@@ -821,8 +849,19 @@ export function createJourneyController(
     alternateRoutes.forEach((a) => {
       if (a.line.visible) targets.push(a.line);
     });
+    ghostLines.forEach((g) => {
+      if (g.visible) targets.push(g);
+    });
     const hits = raycaster.intersectObjects(targets, false);
     if (hits.length === 0) return;
+
+    // Ghost check first: a ghost and the alternate route that superseded it can
+    // sit close together, and the revert is the more specific intent.
+    const ghostIndex = findGhostHistoryIndexFromObject(hits[0].object);
+    if (ghostIndex >= 0) {
+      revertToHistory(ghostIndex);
+      return;
+    }
 
     const routeEntry = findAlternateRouteFromObject(hits[0].object);
     if (routeEntry) {
@@ -880,13 +919,29 @@ export function createJourneyController(
     alternateRoutes.forEach((a) => {
       if (a.line.visible) targets.push(a.line);
     });
+    ghostLines.forEach((g) => {
+      if (g.visible) targets.push(g);
+    });
     const hits = raycaster.intersectObjects(targets, false);
     const hitObj = hits.length > 0 ? hits[0].object : null;
     hoveredClusterIndex = hitObj ? findClusterIndexFromObject(hitObj) : -1;
     hoveredForecastIndex = hitObj ? findForecastIndexFromObject(hitObj) : -1;
     const hoveredRoute = hitObj ? findAlternateRouteFromObject(hitObj) : null;
+    const hoveredGhostIndex = hitObj ? findGhostHistoryIndexFromObject(hitObj) : -1;
+
+    // Ghosts stay faint as "superseded" styling; only the hovered one lifts,
+    // so it reads as clickable without undoing that intent globally.
+    for (const g of ghostLines) {
+      const mat = g.material as THREE.LineDashedMaterial;
+      const wanted = g.userData.historyIndex === hoveredGhostIndex ? 0.55 : 0.2;
+      if (mat.opacity !== wanted) mat.opacity = wanted;
+    }
+
     canvas.style.cursor =
-      hoveredClusterIndex >= 0 || hoveredForecastIndex >= 0 || hoveredRoute
+      hoveredClusterIndex >= 0 ||
+      hoveredForecastIndex >= 0 ||
+      hoveredRoute ||
+      hoveredGhostIndex >= 0
         ? "pointer"
         : "grab";
   }
@@ -1254,6 +1309,13 @@ export function createJourneyController(
     return alternateRoutes.find((a) => a.line === obj) ?? null;
   }
 
+  /** History index of a clicked/hovered ghost route line, or -1. */
+  function findGhostHistoryIndexFromObject(obj: THREE.Object3D): number {
+    if (obj.userData.kind !== "ghost-route") return -1;
+    const idx = obj.userData.historyIndex;
+    return typeof idx === "number" && commitHistory[idx] ? idx : -1;
+  }
+
   function hideAlternateRoute(waypointId: string) {
     const entry = alternateRoutes.find((a) => a.waypointId === waypointId);
     if (entry) {
@@ -1264,6 +1326,45 @@ export function createJourneyController(
       entry.label.el.remove();
       const idx = allProjectedLabels.indexOf(entry.label);
       if (idx >= 0) allProjectedLabels.splice(idx, 1);
+    }
+  }
+
+  /**
+   * Put back every route whose recovery is no longer applied — after a revert,
+   * the delays that were "fixed" by the discarded commits are in play again, so
+   * their routes must be offered (and re-labelled) once more.
+   */
+  function restoreAlternateRoutes() {
+    for (const entry of alternateRoutes) {
+      if (entry.line.visible) continue;
+      if (appliedRecoveries[entry.waypointId] != null) continue;
+      const points = buildAlternateRoutePoints(entry.waypointId);
+      if (!points || points.length < 2) continue;
+      updateRoutePreviewLine(entry.line, points);
+      entry.points = points;
+      entry.line.visible = true;
+
+      const midIndex = Math.floor(points.length / 2);
+      const midPoint = points[midIndex]
+        .clone()
+        .add(
+          new THREE.Vector3(
+            0,
+            routePreviewLiftAt(points, midIndex) + ROUTE_PREVIEW_LABEL_CLEARANCE,
+            0
+          )
+        );
+      // The old label element was removed from the DOM by hideAlternateRoute,
+      // so mount a fresh one and re-register it for collision syncing.
+      const label = mountRouteLabelElement(
+        options.axisOverlay,
+        entry.waypointId,
+        "Alternate route",
+        midPoint,
+        { key: options.axisClassNames.key, title: options.axisClassNames.title }
+      );
+      entry.label = label;
+      allProjectedLabels.push(label);
     }
   }
 
@@ -1325,8 +1426,18 @@ export function createJourneyController(
       model.projectedControlPoints.map((p) => p.clone())
     );
     const ghostLine = createGhostRouteLine(ghostCurve);
+    ghostLine.userData.historyIndex = commitHistory.length;
     root.add(ghostLine);
     ghostLines.push(ghostLine);
+
+    // Snapshot the pre-commit state this ghost depicts, so clicking the ghost
+    // can restore exactly what the path looked like before this commit.
+    commitHistory.push({
+      appliedRecoveries: { ...appliedRecoveries },
+      controlPoints: model.projectedControlPoints.map((p) => p.clone()),
+      projectedEndIso: model.timeline.projectedEnd,
+      ghostLine,
+    });
 
     // Compound with any previously applied plans (steel unresolved stays full).
     appliedRecoveries[waypointId] = daysRecovered;
@@ -1449,35 +1560,116 @@ export function createJourneyController(
     });
   }
 
-  function resetCatchUpPlan() {
-    morphing = false;
-    for (const k of Object.keys(appliedRecoveries)) {
-      delete appliedRecoveries[k];
-    }
-    for (let i = 0; i < model.projectedControlPoints.length; i++) {
-      model.projectedControlPoints[i].copy(model.projectedControlPointsRest[i]);
-    }
-    rebuildProjectedFromControls();
+  /**
+   * Jump the projected path back to the state captured before commit
+   * `historyIndex`, animated with the same morph used going forward. Commits
+   * after that point are discarded — the alternate routes they represented are
+   * no longer reachable once you've stepped back past them.
+   */
+  function revertToHistory(historyIndex: number) {
+    if (morphing) return;
+    const snapshot = commitHistory[historyIndex];
+    if (!snapshot) return;
 
-    const cascaded = computeCascadedSchedule(model.waypoints);
-    const lastCascaded = cascaded[cascaded.length - 1];
-    const newProjectedEndIso = lastCascaded.projectedEnd;
-    model.timeline.projectedEnd = newProjectedEndIso;
-    const targetTickX = dateToX(newProjectedEndIso, scale);
+    // Restore the recovery set exactly as it stood before that commit.
+    for (const k of Object.keys(appliedRecoveries)) delete appliedRecoveries[k];
+    for (const [k, v] of Object.entries(snapshot.appliedRecoveries)) {
+      appliedRecoveries[k] = v;
+    }
+
+    // Drop every ghost/commit AFTER the target (its own ghost stays, so the
+    // same revert can be repeated harmlessly).
+    for (let i = commitHistory.length - 1; i > historyIndex; i--) {
+      const stale = commitHistory[i];
+      root.remove(stale.ghostLine);
+      stale.ghostLine.geometry.dispose();
+      const mat = stale.ghostLine.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat.dispose();
+      const gi = ghostLines.indexOf(stale.ghostLine);
+      if (gi >= 0) ghostLines.splice(gi, 1);
+      commitHistory.splice(i, 1);
+    }
+
+    const targets = snapshot.controlPoints;
+    while (model.projectedControlPoints.length < targets.length) {
+      model.projectedControlPoints.push(
+        model.projectedControlPoints[model.projectedControlPoints.length - 1].clone()
+      );
+    }
+    model.projectedControlPoints.length = targets.length;
+    const startPts = model.projectedControlPoints.map((p) => p.clone());
+
+    const newProjectedEndIso = snapshot.projectedEndIso;
+    const cascaded = computeCascadedSchedule(model.waypoints, appliedRecoveries);
+    const newDaysBehind = cascaded[cascaded.length - 1].cascadeAfter;
+
     const projectedLabel = screenLabels.find((l) => l.el.dataset.kind === "projectedEnd");
-    if (projectedLabel) {
-      projectedLabel.el.dataset.iso = newProjectedEndIso;
-      const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
-      if (sub) sub.textContent = formatDay(newProjectedEndIso);
-      projectedLabel.local.x = targetTickX;
-      projectedLabel.el.setAttribute("aria-label", `Scrub to Projected end, ${formatDay(newProjectedEndIso)}`);
-    }
-    if (projectedEndTick) {
-      projectedEndTick.position.x = targetTickX;
-    }
+    const startTickX = projectedEndTick?.position.x ?? dateToX(model.timeline.projectedEnd, scale);
+    const targetTickX = dateToX(newProjectedEndIso, scale);
 
-    idleActive = true;
-    if (!userOrbiting) startIdleDrift(true);
+    morphing = true;
+    idleActive = false;
+    killIdleTweens();
+
+    const state = { t: 0 };
+    gsap.killTweensOf(state);
+    gsap.to(state, {
+      t: 1,
+      duration: CATCHUP_DURATION,
+      ease: EASE.catchup,
+      onUpdate: () => {
+        for (let i = 0; i < targets.length; i++) {
+          model.projectedControlPoints[i].lerpVectors(startPts[i], targets[i], state.t);
+        }
+        rebuildProjectedFromControls();
+        if (projectedEndTick) {
+          projectedEndTick.position.x = THREE.MathUtils.lerp(startTickX, targetTickX, state.t);
+        }
+        if (projectedLabel) {
+          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
+        }
+      },
+      onComplete: () => {
+        morphing = false;
+        for (let i = 0; i < targets.length; i++) {
+          model.projectedControlPoints[i].copy(targets[i]);
+        }
+        model.timeline.projectedEnd = newProjectedEndIso;
+        // Index 0's snapshot is the pre-any-commit state: reverting to it means
+        // nothing is taken, so the path goes back to the amber "at risk" tube.
+        routeTakenActive = historyIndex > 0;
+        rebuildProjectedFromControls();
+        refreshCriticalMarkers();
+
+        if (projectedLabel) {
+          projectedLabel.el.dataset.iso = newProjectedEndIso;
+          if (routeTakenActive) projectedLabel.el.dataset.routeTaken = "true";
+          else delete projectedLabel.el.dataset.routeTaken;
+          const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
+          if (sub) sub.textContent = formatDay(newProjectedEndIso);
+          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
+          projectedLabel.el.setAttribute(
+            "aria-label",
+            `Scrub to Projected end, ${formatDay(newProjectedEndIso)}`
+          );
+        }
+        if (projectedEndTick) projectedEndTick.position.x = targetTickX;
+
+        // Delays that are "back in play" after stepping back re-offer routes.
+        restoreAlternateRoutes();
+        refreshAlternateRoutes();
+
+        idleActive = true;
+        if (!userOrbiting) startIdleDrift(true);
+        callbacks.onRevert?.({
+          historyIndex,
+          projectedEnd: newProjectedEndIso,
+          daysBehind: newDaysBehind,
+          appliedWaypointIds: Object.keys(appliedRecoveries),
+        });
+      },
+    });
   }
 
   function dollyBy(factor: number) {
@@ -1540,7 +1732,7 @@ export function createJourneyController(
     setSize,
     dispose,
     applyCatchUpPlan,
-    resetCatchUpPlan,
+    revertToHistory,
     zoomIn: () => dollyBy(0.82),
     zoomOut: () => dollyBy(1.22),
     setHoverEnabled: (active: boolean) => {
