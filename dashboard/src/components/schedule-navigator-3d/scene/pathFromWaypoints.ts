@@ -91,7 +91,6 @@ export interface NavigatorPathModel {
 }
 
 export const X_SPAN = 42;
-const LATERAL = 2.4;
 export const SHARD_CLUSTER_RADIUS = 2.35;
 
 const sevRank: Record<DelaySeverity, number> = {
@@ -354,11 +353,10 @@ export function buildJourneyPoints(
 ): THREE.Vector3[] {
   const total = waypoints.length;
   return waypoints.map((w, i) => {
-    const lateral = Math.sin(i * 0.72) * LATERAL;
     const c = cascaded[i];
     const x = dateToX(c.projectedEnd, scale);
     const height = pctToY(progressPct(w, i, total));
-    return new THREE.Vector3(x, height, lateral);
+    return new THREE.Vector3(x, height, 0);
   });
 }
 
@@ -628,11 +626,10 @@ export function buildNavigatorPathModel(
   const plannedPoints = truncateAtFullCompletion([
     plannedStartPt,
     ...waypoints.map((w, i) => {
-      const lateral = Math.sin(i * 0.72) * LATERAL;
       return new THREE.Vector3(
         dateToX(w.plannedEnd, timelineScale),
         pctToY(plannedPct(w, i, waypoints.length)),
-        lateral * 0.28
+        0
       );
     }),
   ]);

@@ -85,7 +85,7 @@ export function dateToX(iso: string, scale: TimelineScale): number {
 /** World Y at 0% cumulative complete. */
 export const PCT_AXIS_Y_BASE = 0.15;
 /** World Y span from 0% to 100% cumulative complete. */
-export const PCT_AXIS_Y_SPAN = 4.0;
+export const PCT_AXIS_Y_SPAN = 9.0;
 /**
  * World X of the vertical % axis. Anchored to exactly the same X as the
  * "START" date marker (dateToX(timeline.start) === 0 by construction) so the
