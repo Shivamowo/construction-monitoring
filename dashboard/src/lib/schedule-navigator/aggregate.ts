@@ -380,7 +380,7 @@ export function buildScheduleNavigatorPayload(
         ? delayReasonFor(draft.milestoneClass, delayCategory, severity)
         : undefined;
     const catchUpPlan =
-      draft.localDelayDays > 0 && delayCategory
+      severity === "severe" && delayCategory
         ? catchUpPlanFor(draft.localDelayDays, delayCategory)
         : undefined;
     const milestone = milestoneWaypointKeys.has(draft.id)
@@ -436,7 +436,7 @@ export function buildScheduleNavigatorPayload(
       "1,203 components with deviationFlag not_scheduled are excluded from the projected route and listed separately.",
       `timeline.asOf (${asOf}) is FORGED: the latest waypoint plannedEnd with any known onTimeStatus (onTime+behind+ahead>0), not a real "today" field in the schema.`,
       "cumulativePlannedPct/cumulativeActualPct are FORGED: weighted by each waypoint's componentCount share of all scheduled components, same S-curve method as the dummy scenario. The asOf-frontier waypoint gets a partial actual value from its own onTime+ahead share; later waypoints have no actual value.",
-      "delayReason, catchUpPlan, and delayCategory are FORGED template text/values, generated only for waypoints with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data.",
+      "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. catchUpPlan is generated only for waypoints with a severe (>7 day) delay, to keep the alternate-route overlay legible against real data's density of minor slips.",
       "milestone markers are FORGED: one per tracked milestoneClass (Structure/Framing/Envelope/Finishes), placed at that class's last waypoint by plannedEnd.",
     ],
   };
