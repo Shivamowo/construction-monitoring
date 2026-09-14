@@ -4,6 +4,9 @@ import path from "node:path";
 const nextConfig: NextConfig = {
   // Allow importing/reading assets from the monorepo `shared/` folder.
   outputFileTracingRoot: path.join(__dirname, ".."),
+  outputFileTracingIncludes: {
+    "/api/schedule-navigator/route": ["../shared/data/**"],
+  },
   turbopack: {
     root: path.join(__dirname, ".."),
   },
