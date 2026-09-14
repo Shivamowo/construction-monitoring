@@ -27,10 +27,20 @@ export async function GET() {
       });
     }
 
-    const schedule = loadJsonFile<PlannedTask[]>("schedule.json");
-    const fusion = loadJsonFile<FusionOutput[]>("fusion.json");
-    const deviations = loadJsonFile<AsBuiltDeviation[]>("deviation.json");
-    const metadata = loadJsonFile<ProjectMetadata>("metadata.json");
+    // schedule.json/fusion.json/deviation.json/metadata.json are not split out
+    // on disk yet — data.json still bundles everything. Destructure from there
+    // instead of regenerating the split files (the split generation script is
+    // more fragile: it depends on raw drone/IFC inputs not guaranteed present).
+    const bundle = loadJsonFile<{
+      plannedSchedule: PlannedTask[];
+      fusionOutputs: FusionOutput[];
+      asBuiltDeviations: AsBuiltDeviation[];
+      projectMetadata: ProjectMetadata;
+    }>("data.json");
+    const schedule = bundle.plannedSchedule;
+    const fusion = bundle.fusionOutputs;
+    const deviations = bundle.asBuiltDeviations;
+    const metadata = bundle.projectMetadata;
 
     const payload = buildScheduleNavigatorPayload(
       schedule,
