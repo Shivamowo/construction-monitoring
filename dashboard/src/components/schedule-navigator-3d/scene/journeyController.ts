@@ -883,7 +883,11 @@ export function createJourneyController(
       if (routeEntry.points.length) {
         const midIndex = Math.floor(routeEntry.points.length / 2);
         const focus = routeEntry.points[midIndex].clone();
-        focus.y += routePreviewLiftAt(routeEntry.points, midIndex);
+        focus.y += routePreviewLiftAt(
+          routeEntry.points,
+          midIndex,
+          routeEntry.stackIndex
+        );
         routeEntry.line.localToWorld(focus);
         root.worldToLocal(focus);
         flyToFocus(focus);
@@ -1226,6 +1230,12 @@ export function createJourneyController(
      * alongside the mesh. */
     points: THREE.Vector3[];
     label: ScreenLabel;
+    /** Fixed build-order index — extra vertical stacking so two concurrent
+     * alternate routes (their delay waypoints close together in time) don't
+     * ride coincident; see ALT_ROUTE_STACK_GAP. Stays fixed for the entry's
+     * lifetime, not recomputed on restore/refresh, so a route doesn't jump
+     * height relative to its neighbors. */
+    stackIndex: number;
   }
   const alternateRoutes: AlternateRouteEntry[] = [];
 
@@ -1260,10 +1270,25 @@ export function createJourneyController(
     ...model.forecastShards.map((s) => s.waypoint.id),
   ].filter((id) => recoveryDaysForWaypoint(model.waypoints.find((w) => w.id === id)) > 0);
 
-  for (const waypointId of planBearingIds) {
+  // Stacking only helps (and only costs vertical headroom) when two routes'
+  // branch points actually sit close together in time — a flat build-order
+  // index stacked EVERY route regardless of spacing, which pushed routes far
+  // apart in time up into the planned-reference tube's varying height and
+  // read as a self-intersecting loop where two unrelated tubes crossed in
+  // screen space. Only bump stackIndex for routes within this window of an
+  // already-placed one.
+  const ALT_ROUTE_STACK_PROXIMITY_X = scale.xSpan * 0.08;
+  const placedBranchXs: number[] = [];
+
+  planBearingIds.forEach((waypointId) => {
     const points = buildAlternateRoutePoints(waypointId);
-    if (!points) continue;
-    const line = createRoutePreviewLine(points);
+    if (!points) return;
+    const branchX = points[0].x;
+    const stackIndex = placedBranchXs.filter(
+      (x) => Math.abs(x - branchX) < ALT_ROUTE_STACK_PROXIMITY_X
+    ).length;
+    placedBranchXs.push(branchX);
+    const line = createRoutePreviewLine(points, stackIndex);
     line.userData.kind = "alternate-route";
     line.userData.waypointId = waypointId;
     root.add(line);
@@ -1274,7 +1299,8 @@ export function createJourneyController(
       .add(
         new THREE.Vector3(
           0,
-          routePreviewLiftAt(points, midIndex) + ROUTE_PREVIEW_LABEL_CLEARANCE,
+          routePreviewLiftAt(points, midIndex, stackIndex) +
+            ROUTE_PREVIEW_LABEL_CLEARANCE,
           0
         )
       );
@@ -1292,8 +1318,8 @@ export function createJourneyController(
     );
     allProjectedLabels.push(label);
 
-    alternateRoutes.push({ waypointId, line, points, label });
-  }
+    alternateRoutes.push({ waypointId, line, points, label, stackIndex });
+  });
 
   // Wider hit-test threshold so thin lines are practical raycast targets.
   raycaster.params.Line = { threshold: 0.18 };
@@ -1349,7 +1375,7 @@ export function createJourneyController(
       if (appliedRecoveries[entry.waypointId] != null) continue;
       const points = buildAlternateRoutePoints(entry.waypointId);
       if (!points || points.length < 2) continue;
-      updateRoutePreviewLine(entry.line, points);
+      updateRoutePreviewLine(entry.line, points, entry.stackIndex);
       entry.points = points;
       entry.line.visible = true;
 
@@ -1359,7 +1385,8 @@ export function createJourneyController(
         .add(
           new THREE.Vector3(
             0,
-            routePreviewLiftAt(points, midIndex) + ROUTE_PREVIEW_LABEL_CLEARANCE,
+            routePreviewLiftAt(points, midIndex, entry.stackIndex) +
+              ROUTE_PREVIEW_LABEL_CLEARANCE,
             0
           )
         );
@@ -1390,7 +1417,7 @@ export function createJourneyController(
         hideAlternateRoute(entry.waypointId);
         continue;
       }
-      updateRoutePreviewLine(entry.line, points);
+      updateRoutePreviewLine(entry.line, points, entry.stackIndex);
       entry.points = points;
       const midIndex = Math.floor(points.length / 2);
       entry.label.local.copy(
@@ -1399,7 +1426,7 @@ export function createJourneyController(
           .add(
             new THREE.Vector3(
               0,
-              routePreviewLiftAt(points, midIndex) +
+              routePreviewLiftAt(points, midIndex, entry.stackIndex) +
                 ROUTE_PREVIEW_LABEL_CLEARANCE,
               0
             )
@@ -1790,7 +1817,7 @@ export function createJourneyController(
       if (!entry || !entry.line.visible || !entry.points.length) return null;
       const midIndex = Math.floor(entry.points.length / 2);
       const anchorPos = entry.points[midIndex].clone();
-      anchorPos.y += routePreviewLiftAt(entry.points, midIndex);
+      anchorPos.y += routePreviewLiftAt(entry.points, midIndex, entry.stackIndex);
       return projectLocalToScreen(anchorPos);
     },
     shardCount: model.shards.length,

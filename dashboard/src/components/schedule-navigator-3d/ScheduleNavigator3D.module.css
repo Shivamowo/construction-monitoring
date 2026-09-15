@@ -30,7 +30,7 @@
   --chrome-accent-border-strong: rgba(95, 122, 79, 0.75);
   /* Route-preview line gray — distinct token from --chrome-accent (button/CTA
      chrome) even though today's chrome-accent sage predates this palette. */
-  --route-alt: #7d8ba0;
+  --route-alt: #424c5b;
   --ease-ui: 0.28s cubic-bezier(0.33, 1, 0.68, 1);
   /* ≈ power2.out */
 
@@ -152,7 +152,7 @@
 }
 
 .statGood {
-  color: #1f7a6c;
+  color: #11433b;
 }
 
 .statNeutral {
@@ -858,7 +858,7 @@
   height: 0.3rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: #1f7a6c;
+  background: #11433b;
 }
 
 .swatchPlanned {
@@ -866,7 +866,7 @@
   height: 0.3rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: #5c584f;
+  background: #33302b;
 }
 
 .swatchProjected {
@@ -875,7 +875,7 @@
   border-radius: 999px;
   flex-shrink: 0;
   background: repeating-linear-gradient(90deg,
-      #c98a3a 0 5px,
+      #704c1f 0 5px,
       transparent 5px 9px);
   opacity: 0.9;
 }
@@ -893,7 +893,7 @@
   height: 0.34rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: #1a73e8;
+  background: #0d3f81;
   box-shadow: 0 0 4px rgba(26, 115, 232, 0.5);
 }
 
@@ -928,7 +928,7 @@
   width: 0.55rem;
   height: 0.55rem;
   flex-shrink: 0;
-  border: 1.5px solid #b34c2e;
+  border: 1.5px solid #622a19;
   transform: rotate(45deg);
 }
 
@@ -946,7 +946,7 @@
   width: 0.55rem;
   height: 0.55rem;
   flex-shrink: 0;
-  border: 1.5px solid #2f7f6f;
+  border: 1.5px solid #1a463d;
   transform: rotate(45deg);
 }
 
@@ -997,7 +997,7 @@
   height: 0.14rem;
   flex-shrink: 0;
   background: repeating-linear-gradient(90deg,
-      #9a958c 0 4px,
+      #56524c 0 4px,
       transparent 4px 7px);
   opacity: 0.75;
 }
@@ -1227,15 +1227,15 @@
 
 /* Color-coding per subject — matches each label's own line/marker color. */
 .axisKey[data-kind="plannedEnd"] {
-  color: #5c584f;
+  color: #33302b;
 }
 
 .axisKey[data-kind="projectedEnd"] {
-  color: #c98a3a;
+  color: #704c1f;
 }
 
 .axisKey[data-kind="projectedEnd"][data-route-taken="true"] {
-  color: #1a73e8;
+  color: #0d3f81;
 }
 
 /* Alternate-route DOM label — neutral gray to match the solid preview line;

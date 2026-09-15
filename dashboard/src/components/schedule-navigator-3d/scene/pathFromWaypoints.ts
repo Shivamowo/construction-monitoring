@@ -335,11 +335,46 @@ function ensurePair(pts: THREE.Vector3[]): THREE.Vector3[] {
   return [new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0)];
 }
 
+/**
+ * Minimum X spacing between consecutive projected/alt-route control points.
+ * Real schedule data can put several waypoints' projected-end dates within
+ * days of each other, producing control points only a fraction of a unit
+ * apart in X. CatmullRom, even with strictly-increasing control-point X,
+ * overshoots between such closely-spaced points and briefly retraces
+ * backward in X — the parametric curve is NOT guaranteed monotonic just
+ * because its control points are. That overshoot reads as a self-crossing
+ * loop in the rendered tube. Dropping intermediate points closer than this
+ * to the previous kept point removes the tight cluster that triggers the
+ * overshoot, without measurably changing the curve's overall shape (the
+ * dropped points differ from their neighbor by a few days out of the whole
+ * project timeline).
+ */
+const PROJECTED_MIN_X_GAP = X_SPAN * 0.03;
+
+/** Drop points too close in X to the previously-kept one (first/last always kept). */
+function mergeCloseX(
+  points: THREE.Vector3[],
+  minGapX: number
+): THREE.Vector3[] {
+  if (points.length < 3) return points;
+  const result = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    if (points[i].x - result[result.length - 1].x < minGapX) continue;
+    result.push(points[i]);
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
 export function rebuildProjectedCurve(
   controlPoints: THREE.Vector3[]
 ): THREE.CatmullRomCurve3 {
+  const smoothed = mergeCloseX(
+    controlPoints.map((p) => p.clone()),
+    PROJECTED_MIN_X_GAP
+  );
   return new THREE.CatmullRomCurve3(
-    ensurePair(controlPoints.map((p) => p.clone())),
+    ensurePair(smoothed),
     false,
     "catmullrom",
     0.4
@@ -505,10 +540,12 @@ export function buildRoutePreviewPoints(
   shardPosition: THREE.Vector3,
   targets: THREE.Vector3[]
 ): THREE.Vector3[] {
-  const pts = truncateAtFullCompletion([
-    shardPosition.clone(),
-    ...targets.map((p) => p.clone()),
-  ]);
+  const pts = truncateAtFullCompletion(
+    mergeCloseX(
+      [shardPosition.clone(), ...targets.map((p) => p.clone())],
+      PROJECTED_MIN_X_GAP
+    )
+  );
   const n = pts.length;
   const maxOffset = 0.55;
   return pts.map((p, i) => {

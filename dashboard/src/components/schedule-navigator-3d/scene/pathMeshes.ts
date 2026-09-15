@@ -41,6 +41,15 @@ const ROUTE_PREVIEW_Y_LIFT = PCT_AXIS_Y_SPAN * 0.06;
  * of the curve's length for a representative branch).
  */
 const ROUTE_PREVIEW_KICKOFF_FRAC = 0.02;
+/**
+ * Extra lift per concurrent alternate-route line beyond the first, so two
+ * preview routes branching near each other in time don't ride coincident for
+ * their whole length (only ROUTE_PREVIEW_Y_LIFT separated them from the base
+ * path, nothing separated them from each other). Expressed as a fraction of
+ * ROUTE_PREVIEW_Y_LIFT itself (rather than a new hardcoded absolute) so it
+ * scales automatically if that lift is retuned later.
+ */
+export const ALT_ROUTE_STACK_GAP = ROUTE_PREVIEW_Y_LIFT * 0.5;
 const TUBE_RADIAL = 24;
 
 /**
@@ -77,13 +86,11 @@ export function createPlannedTube(
     TUBE_RADIAL,
     false
   );
-  /* Glassy warm-graphite planned path — clearcoat for specular on the light backdrop */
-  const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#5c584f"),
-    metalness: 0.18,
-    roughness: 0.24,
-    clearcoat: 0.55,
-    clearcoatRoughness: 0.16,
+  /* Matte warm-graphite planned path */
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#33302b"),
+    metalness: 0,
+    roughness: 0.9,
     transparent: true,
     opacity: 0.55,
   });
@@ -115,13 +122,11 @@ export function createActualTube(
     return existing;
   }
 
-  /* Light theme: rich teal, glassy, shadow-based depth */
-  const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#1f7a6c"),
-    metalness: 0.14,
-    roughness: 0.22,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.14,
+  /* Light theme: rich teal, matte, shadow-based depth */
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#11433b"),
+    metalness: 0,
+    roughness: 0.9,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
@@ -158,16 +163,14 @@ export function createOrUpdateProjectedTube(
     return existing;
   }
 
-  /* Light theme: saturated amber, glassy translucency, shadow depth */
-  const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#c98a3a"),
-    metalness: 0.12,
-    roughness: 0.26,
+  /* Light theme: saturated amber, matte translucency, shadow depth */
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#704c1f"),
+    metalness: 0,
+    roughness: 0.9,
     transparent: true,
     opacity: 0.8,
     depthWrite: false,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.18,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
@@ -204,16 +207,14 @@ export function createOrUpdateTakenRouteTube(
     return existing;
   }
 
-  const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#1a73e8"),
-    metalness: 0.05,
-    roughness: 0.28,
-    clearcoat: 0.35,
-    clearcoatRoughness: 0.25,
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#0d3f81"),
+    metalness: 0,
+    roughness: 0.9,
     // Warm ambient/env light on a cream backdrop washes out cool blues under
     // physical shading — self-emission keeps the hue reading as saturated
     // confident blue instead of a pale periwinkle.
-    emissive: new THREE.Color("#1a73e8"),
+    emissive: new THREE.Color("#0d3f81"),
     emissiveIntensity: 0.45,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -232,7 +233,7 @@ export function createProjectedDashLine(
   /* Light theme: muted amber dash */
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
   const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#c98a3a"),
+    color: new THREE.Color("#704c1f"),
     dashSize: 0.45,
     gapSize: 0.3,
     transparent: true,
@@ -270,9 +271,10 @@ export function updateProjectedDashLine(
  */
 export function routePreviewLiftAt(
   _points: THREE.Vector3[],
-  index: number
+  index: number,
+  stackIndex = 0
 ): number {
-  return index === 0 ? 0 : ROUTE_PREVIEW_Y_LIFT;
+  return index === 0 ? 0 : ROUTE_PREVIEW_Y_LIFT + stackIndex * ALT_ROUTE_STACK_GAP;
 }
 
 /**
@@ -291,15 +293,19 @@ export function routePreviewLiftAt(
  * neighboring control points as a group, not by how gradually one point's
  * height eases in — an extra point forces the shape change directly).
  */
-function liftRoutePreviewPoints(points: THREE.Vector3[]): THREE.Vector3[] {
+function liftRoutePreviewPoints(
+  points: THREE.Vector3[],
+  stackIndex = 0
+): THREE.Vector3[] {
   if (points.length < 2) return points.map((p) => p.clone());
+  const lift = ROUTE_PREVIEW_Y_LIFT + stackIndex * ALT_ROUTE_STACK_GAP;
   const [p0, p1] = points;
   const kickoff = new THREE.Vector3()
     .lerpVectors(p0, p1, ROUTE_PREVIEW_KICKOFF_FRAC)
-    .setY(p0.y + ROUTE_PREVIEW_Y_LIFT);
+    .setY(p0.y + lift);
   const rest = points
     .slice(1)
-    .map((p) => new THREE.Vector3(p.x, p.y + ROUTE_PREVIEW_Y_LIFT, p.z));
+    .map((p) => new THREE.Vector3(p.x, p.y + lift, p.z));
   return [p0.clone(), kickoff, ...rest];
 }
 
@@ -313,9 +319,12 @@ function liftRoutePreviewPoints(points: THREE.Vector3[]): THREE.Vector3[] {
  * close to the actual/projected tubes — visible from afar — but stays below
  * the taken-route radius so it never competes with the current path.
  */
-export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Mesh {
+export function createRoutePreviewLine(
+  points: THREE.Vector3[],
+  stackIndex = 0
+): THREE.Mesh {
   const curve = new THREE.CatmullRomCurve3(
-    liftRoutePreviewPoints(points),
+    liftRoutePreviewPoints(points, stackIndex),
     false,
     "catmullrom",
     0.4
@@ -329,7 +338,7 @@ export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Mesh {
     false
   );
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#7d8ba0"),
+    color: new THREE.Color("#424c5b"),
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -348,7 +357,7 @@ export function createGhostRouteLine(curve: THREE.CatmullRomCurve3): THREE.Line 
   const pts = curve.getPoints(80);
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
   const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#9a958c"),
+    color: new THREE.Color("#56524c"),
     dashSize: 0.4,
     gapSize: 0.35,
     transparent: true,
@@ -401,7 +410,7 @@ export function createRoutePreviewLabel(text: string): THREE.Sprite {
   ctx.fillStyle = "rgba(247, 243, 236, 0.96)";
   ctx.fill();
   ctx.lineWidth = 4;
-  ctx.strokeStyle = "#7d8ba0";
+  ctx.strokeStyle = "#424c5b";
   ctx.stroke();
 
   ctx.fillStyle = "#4a463d";
@@ -419,10 +428,11 @@ export function createRoutePreviewLabel(text: string): THREE.Sprite {
 
 export function updateRoutePreviewLine(
   mesh: THREE.Mesh,
-  points: THREE.Vector3[]
+  points: THREE.Vector3[],
+  stackIndex = 0
 ): void {
   const curve = new THREE.CatmullRomCurve3(
-    liftRoutePreviewPoints(points),
+    liftRoutePreviewPoints(points, stackIndex),
     false,
     "catmullrom",
     0.4
@@ -605,7 +615,7 @@ export function createCriticalPathMarker(spec: {
   group.position.y += CRITICAL_MARKER_Y_OFFSET;
   const geometry = new THREE.OctahedronGeometry(0.13, 0);
   geometry.scale(1, 0.62, 1); // squash into a diamond/lozenge silhouette
-  const material = new THREE.MeshBasicMaterial({ color: "#b34c2e" });
+  const material = new THREE.MeshBasicMaterial({ color: "#622a19" });
   const diamond = new THREE.Mesh(geometry, material);
   group.add(diamond);
   // Only critical waypoints show a marker at all — slack waypoints get none
@@ -634,7 +644,7 @@ export function createMilestoneMarker(spec: {
   const group = new THREE.Group();
   group.name = `milestone-${spec.id}`;
   group.position.copy(spec.position);
-  const color = spec.state === "reached" ? "#2f7f6f" : "#b27a34";
+  const color = spec.state === "reached" ? "#1a463d" : "#62431d";
 
   // Solid needle — matches the today-marker's 0.02 needle weight, shorter
   // (secondary marker, not the primary today reference).
@@ -700,7 +710,7 @@ export function createCriticalPathAccentTube(
     false
   );
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#b34c2e"),
+    color: new THREE.Color("#622a19"),
     transparent: true,
     opacity: 0.85,
     depthWrite: false,
@@ -769,15 +779,13 @@ export function createClusterShard(cluster: ShardCluster): THREE.Group {
   const crystalGeo = new THREE.IcosahedronGeometry(0.24 * scaleBoost, 0);
   crystalGeo.scale(0.75, 1.35, 0.75);
 
-  const crystalMat = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color("#a11d22"),
-    metalness: 0.12,
-    roughness: 0.3,
+  const crystalMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#591013"),
+    metalness: 0,
+    roughness: 0.9,
     emissive: new THREE.Color("#000000"),
     emissiveIntensity: 0,
     flatShading: true,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.18,
   });
   const crystal = new THREE.Mesh(crystalGeo, crystalMat);
   crystal.userData.kind = "shard";
@@ -786,7 +794,7 @@ export function createClusterShard(cluster: ShardCluster): THREE.Group {
 
   const ringGeo = new THREE.RingGeometry(0.26, 0.32, 48);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#a11d22"),
+    color: new THREE.Color("#591013"),
     transparent: true,
     opacity: 0.38,
     side: THREE.DoubleSide,
