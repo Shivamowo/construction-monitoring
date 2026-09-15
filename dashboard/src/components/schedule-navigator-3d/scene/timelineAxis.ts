@@ -73,7 +73,13 @@ export function buildTimelineScale(input: TimelineInputs): TimelineScale {
     spanMs,
     xSpan: input.xSpan,
     axisY: -0.38,
-    axisZ: -5.6,
+    // Sits just behind the path's Z=0 plane. It used to be -5.6, which under
+    // perspective projected the rails and ticks to a different screen Y than
+    // path points at the same world Y — reading as if the path started below
+    // 0%. Keep the offset larger than the thickest tube radius (0.1) so the
+    // rail never intersects the tubes, but small enough that the parallax is
+    // imperceptible.
+    axisZ: -0.5,
   };
 }
 

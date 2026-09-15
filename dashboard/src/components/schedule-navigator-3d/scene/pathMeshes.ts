@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { ShardCluster } from "./pathFromWaypoints";
+import { PCT_AXIS_Y_BASE, PCT_AXIS_Y_SPAN } from "./timelineAxis";
 
 const TUBE_RADIUS_ACTUAL = 0.085;
 const TUBE_RADIUS_PLANNED = 0.055;
@@ -11,9 +12,15 @@ const TUBE_RADIUS_ROUTE_PREVIEW = 0.075;
 /**
  * Vertical clearance for the route-preview tube above whatever tube it runs
  * alongside. Must clear preview radius (0.075) + the thickest tube it can
- * sit near — taken route (0.1) — + margin (0.05) = 0.225; rounded up.
+ * sit near — taken route (0.1) — + margin (0.05) = 0.225.
+ *
+ * Expressed as a fraction of the % axis span rather than a bare constant: the
+ * original hand-picked 0.24 was tuned against a span of 4.0, and raising the
+ * span (to make the vertical climb read) silently shrank this clearance in
+ * proportional terms. 0.06 * span reproduces 0.24 at span 4.0 and scales with
+ * any future span change.
  */
-const ROUTE_PREVIEW_Y_LIFT = 0.24;
+const ROUTE_PREVIEW_Y_LIFT = PCT_AXIS_Y_SPAN * 0.06;
 /**
  * Fraction of the way from the branch point to the next control point where
  * a synthetic "kickoff" point is inserted, already at full lift height.
@@ -36,12 +43,35 @@ const ROUTE_PREVIEW_Y_LIFT = 0.24;
 const ROUTE_PREVIEW_KICKOFF_FRAC = 0.02;
 const TUBE_RADIAL = 24;
 
+/**
+ * A tube's surface extends `radius` around its centerline, so a curve sitting
+ * exactly on the 0% line renders its bottom half below that line and reads as
+ * "starting negative" even though no data point is. This lifts only the
+ * geometry's centerline far enough to keep the visible surface at or above the
+ * floor — PCT_AXIS_Y_BASE itself stays the exact 0% reference for the axis
+ * rail, ticks and labels.
+ */
+function floorClearedCurve(
+  curve: THREE.CatmullRomCurve3,
+  radius: number
+): THREE.CatmullRomCurve3 {
+  const minY = PCT_AXIS_Y_BASE + radius;
+  if (curve.points.every((p) => p.y >= minY)) return curve;
+  const lifted = new THREE.CatmullRomCurve3(
+    curve.points.map((p) => new THREE.Vector3(p.x, Math.max(p.y, minY), p.z)),
+    curve.closed,
+    curve.curveType as "catmullrom" | "centripetal" | "chordal",
+    curve.tension
+  );
+  return lifted;
+}
+
 export function createPlannedTube(
   curve: THREE.CatmullRomCurve3
 ): THREE.Mesh {
   const tubular = Math.max(96, Math.floor(curve.getLength() * 8));
   const geometry = new THREE.TubeGeometry(
-    curve,
+    floorClearedCurve(curve, TUBE_RADIUS_PLANNED),
     tubular,
     TUBE_RADIUS_PLANNED,
     TUBE_RADIAL,
@@ -72,7 +102,7 @@ export function createActualTube(
 ): THREE.Mesh {
   const tubular = Math.max(80, Math.floor(curve.getLength() * 10));
   const geometry = new THREE.TubeGeometry(
-    curve,
+    floorClearedCurve(curve, TUBE_RADIUS_ACTUAL),
     tubular,
     TUBE_RADIUS_ACTUAL,
     TUBE_RADIAL,
@@ -115,7 +145,7 @@ export function createOrUpdateProjectedTube(
 ): THREE.Mesh {
   const tubular = Math.max(64, Math.floor(curve.getLength() * 8));
   const geometry = new THREE.TubeGeometry(
-    curve,
+    floorClearedCurve(curve, TUBE_RADIUS_PROJECTED),
     tubular,
     TUBE_RADIUS_PROJECTED,
     TUBE_RADIAL,
@@ -161,7 +191,7 @@ export function createOrUpdateTakenRouteTube(
 ): THREE.Mesh {
   const tubular = Math.max(64, Math.floor(curve.getLength() * 8));
   const geometry = new THREE.TubeGeometry(
-    curve,
+    floorClearedCurve(curve, TUBE_RADIUS_TAKEN),
     tubular,
     TUBE_RADIUS_TAKEN,
     TUBE_RADIAL,
@@ -299,9 +329,7 @@ export function createRoutePreviewLine(points: THREE.Vector3[]): THREE.Mesh {
     false
   );
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#8f887c"),
-    transparent: true,
-    opacity: 0.45,
+    color: new THREE.Color("#7d8ba0"),
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -373,7 +401,7 @@ export function createRoutePreviewLabel(text: string): THREE.Sprite {
   ctx.fillStyle = "rgba(247, 243, 236, 0.96)";
   ctx.fill();
   ctx.lineWidth = 4;
-  ctx.strokeStyle = "#8f887c";
+  ctx.strokeStyle = "#7d8ba0";
   ctx.stroke();
 
   ctx.fillStyle = "#4a463d";

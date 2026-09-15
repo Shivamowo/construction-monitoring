@@ -93,6 +93,8 @@ const ORGANIC_YAW = CustomEase.create(
 );
 
 const CATCHUP_DURATION = 2.4;
+/** Idle camera drift is disabled — see startIdleDrift(). */
+const IDLE_DRIFT_ENABLED = false;
 
 export interface ClusterSelectPayload {
   cluster: ShardCluster;
@@ -686,6 +688,13 @@ export function createJourneyController(
   }
 
   function startIdleDrift(fromCurrent = false) {
+    // Idle camera rotation removed — the constant drift read as distracting.
+    // The plumbing (idleActive / killIdleTweens / driftProxy) stays because
+    // other code uses it for morph-state guarding, not just for drift.
+    if (!IDLE_DRIFT_ENABLED) {
+      killIdleTweens();
+      return;
+    }
     killIdleTweens();
     if (!idleActive || morphing) return;
 

@@ -30,7 +30,7 @@
   --chrome-accent-border-strong: rgba(95, 122, 79, 0.75);
   /* Route-preview line gray — distinct token from --chrome-accent (button/CTA
      chrome) even though today's chrome-accent sage predates this palette. */
-  --route-alt: #8f887c;
+  --route-alt: #7d8ba0;
   --ease-ui: 0.28s cubic-bezier(0.33, 1, 0.68, 1);
   /* ≈ power2.out */
 
