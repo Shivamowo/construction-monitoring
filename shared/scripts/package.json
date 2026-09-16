@@ -9,7 +9,8 @@
     "source-photos": "tsx source-pexels-photos.ts",
     "inspect-xlsx": "tsx inspect-xlsx.ts",
     "parse-ifc": "tsx parse-ifc.ts",
-    "parse-schedule": "tsx parse-schedule.ts"
+    "parse-schedule": "tsx parse-schedule.ts",
+    "build-project": "tsx build-project.ts"
   },
   "dependencies": {
     "@types/node": "^26.5.0",
@@ -17,6 +18,7 @@
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "csv-parse": "^7.0.2",
+    "fast-xml-parser": "^4.5.7",
     "papaparse": "^5.7.0",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",

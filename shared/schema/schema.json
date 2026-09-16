@@ -98,8 +98,13 @@
     },
     "PredictedMilestoneClass": {
       "type": "string",
-      "description": "FINAL and LOCKED — six construction milestone buckets. milestoneVocabulary maps real Dutch TaskName values onto these buckets; do not extend this enum.",
+      "description": "FINAL and LOCKED for BIM-linked BUILDING projects — six construction milestone buckets. milestoneVocabulary maps real Dutch TaskName values onto these buckets; do not extend this enum. Schedule-only, non-building projects with no natural mapping onto this vocabulary must leave milestone/predictedMilestoneClass fields unset rather than force-fit a bucket; a new vocabulary is only added once a second real non-building project's shape justifies it.",
       "enum": ["Framing", "MEP", "Finishes", "Structure", "Envelope", "Other"]
+    },
+    "PredecessorLinkType": {
+      "type": "string",
+      "description": "CPM predecessor link type: Finish-to-Start, Start-to-Start, Finish-to-Finish, Start-to-Finish",
+      "enum": ["FS", "SS", "FF", "SF"]
     },
     "ReviewStatus": {
       "type": "string",
@@ -214,7 +219,6 @@
         "taskNameEn",
         "plannedStart",
         "plannedEnd",
-        "componentId",
         "weeklyIfcSnapshots"
       ],
       "properties": {
@@ -242,12 +246,34 @@
         },
         "componentId": {
           "type": "string",
-          "description": "REAL — foreign key to Stream 1 componentId"
+          "description": "REAL — foreign key to Stream 1 componentId; absent for schedule-only projects with no BIM/spatial layer"
         },
         "weeklyIfcSnapshots": {
           "type": "array",
           "items": { "type": "string" },
           "description": "REAL — weekly IFC snapshot filenames associated with this task's timeline"
+        },
+        "predecessors": {
+          "type": "array",
+          "description": "REAL — predecessor task dependencies from source schedule (CPM), when available",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["taskId", "type", "lagDays"],
+            "properties": {
+              "taskId": { "type": "string" },
+              "type": { "$ref": "#/$defs/PredecessorLinkType" },
+              "lagDays": { "type": "number" }
+            }
+          }
+        },
+        "isCriticalPath": {
+          "type": "boolean",
+          "description": "REAL — true if this task sits on the critical path per source schedule"
+        },
+        "totalSlackDays": {
+          "type": ["number", "null"],
+          "description": "REAL — total float/slack in days per source schedule; null if not computed by source"
         },
         "_provenance": {
           "type": "object",
@@ -260,7 +286,6 @@
       "description": "Stream 3: Deviation / As-Built",
       "additionalProperties": false,
       "required": [
-        "componentId",
         "onTimeStatus",
         "deviationDays",
         "deviationDaysSource",
@@ -272,7 +297,7 @@
       "properties": {
         "componentId": {
           "type": "string",
-          "description": "REAL — foreign key to Stream 1 componentId"
+          "description": "REAL — foreign key to Stream 1 componentId; absent for schedule-only projects with no BIM/spatial layer"
         },
         "onTimeStatus": {
           "$ref": "#/$defs/OnTimeStatus",
@@ -322,7 +347,6 @@
       "required": [
         "photoId",
         "timestamp",
-        "componentId",
         "predictedMilestoneClass",
         "confidenceScore",
         "humanCorrected",
@@ -340,7 +364,7 @@
         },
         "componentId": {
           "type": "string",
-          "description": "FORGED — synthetic link to Stream 1 componentId"
+          "description": "FORGED — synthetic link to Stream 1 componentId; absent for schedule-only projects with no BIM/spatial layer"
         },
         "predictedMilestoneClass": {
           "$ref": "#/$defs/PredictedMilestoneClass",
@@ -375,7 +399,6 @@
       "description": "Stream 5: Fusion Layer Output",
       "additionalProperties": false,
       "required": [
-        "componentId",
         "completionPct",
         "confidenceWeightedScore",
         "deviationFlag",
@@ -385,7 +408,7 @@
       "properties": {
         "componentId": {
           "type": "string",
-          "description": "REAL — foreign key to Stream 1 componentId"
+          "description": "REAL — foreign key to Stream 1 componentId; absent for schedule-only projects with no BIM/spatial layer"
         },
         "completionPct": {
           "type": "number",

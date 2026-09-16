@@ -88,6 +88,14 @@ export interface NavigatorPathModel {
   timelineScale: TimelineScale;
   timeline: ScheduleNavigatorPayload["timeline"];
   bounds: THREE.Box3;
+  /**
+   * False when the project has zero as-built tracking — the scene must not
+   * draw an "actual to date" line (nothing's been measured yet). actualCurve
+   * still exists (degenerate, near `todayPosition`) so other code paths that
+   * reference it don't need null-checks; only the visible mesh is gated on
+   * this flag.
+   */
+  hasActualData: boolean;
 }
 
 export const X_SPAN = 42;
@@ -602,6 +610,7 @@ export function buildNavigatorPathModel(
   }
 
   const todayIso = timeline.asOf;
+  const hasActualData = timeline.hasActualData ?? true;
   const emptyScale = buildTimelineScale({
     start: timeline.start,
     plannedEnd: timeline.end,
@@ -632,6 +641,7 @@ export function buildNavigatorPathModel(
       todayTangent: new THREE.Vector3(1, 0, 0),
       timelineScale: emptyScale,
       timeline,
+      hasActualData,
       bounds: new THREE.Box3(),
     };
   }
@@ -826,6 +836,7 @@ export function buildNavigatorPathModel(
     todayTangent: todaySample.tangent.clone(),
     timelineScale,
     timeline,
+    hasActualData,
     bounds,
   };
 }

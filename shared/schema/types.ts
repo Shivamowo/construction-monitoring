@@ -29,7 +29,19 @@ export type OnTimeStatus = "on_time" | "too_late" | "unknown";
 
 export type DeviationFlag = "ahead" | "on_time" | "behind" | "not_scheduled";
 
-/** Placeholder vocabulary locked to six PredictedMilestoneClass buckets. */
+/**
+ * Placeholder vocabulary locked to six PredictedMilestoneClass buckets.
+ * This vocabulary is LOCKED specifically for BIM-linked BUILDING projects
+ * (Schependomlaan-shaped data) — schedule-only, non-building projects (e.g.
+ * a substation/infrastructure schedule with no natural mapping onto
+ * Framing/MEP/Finishes/Structure/Envelope) must NOT force-fit their tasks
+ * into these buckets (don't mis-map "Civil Works" into "Structure"). Such
+ * projects should leave milestone/predictedMilestoneClass fields unset and
+ * skip milestone auto-classification entirely until a second real
+ * non-building project's shape justifies a proper vocabulary extension —
+ * same "don't build it blind" principle as deferring Phase 2 of the
+ * layout-engine plan until more real data shapes are seen.
+ */
 export type PredictedMilestoneClass =
   | "Framing"
   | "MEP"
@@ -37,6 +49,9 @@ export type PredictedMilestoneClass =
   | "Structure"
   | "Envelope"
   | "Other";
+
+/** CPM predecessor link type: Finish-to-Start, Start-to-Start, Finish-to-Finish, Start-to-Finish. */
+export type PredecessorLinkType = "FS" | "SS" | "FF" | "SF";
 
 /** Which path produced deviationDays for an AsBuiltDeviation record. */
 export type DeviationDaysSource = "derived" | "forged";
@@ -106,18 +121,30 @@ export interface PlannedTask {
   plannedStart: string;
   /** REAL — planned end date (ISO 8601 date) */
   plannedEnd: string;
-  /** REAL — foreign key to Stream 1 `componentId` */
-  componentId: string;
+  /**
+   * REAL — foreign key to Stream 1 `componentId`; absent for schedule-only
+   * projects with no BIM/spatial layer.
+   */
+  componentId?: string;
   /** REAL — weekly IFC snapshot filenames associated with this task's timeline */
   weeklyIfcSnapshots: string[];
+  /** REAL — predecessor task dependencies from source schedule (CPM), when available */
+  predecessors?: { taskId: string; type: PredecessorLinkType; lagDays: number }[];
+  /** REAL — true if this task sits on the critical path per source schedule */
+  isCriticalPath?: boolean;
+  /** REAL — total float/slack in days per source schedule; null if not computed by source */
+  totalSlackDays?: number | null;
   /** Field-level provenance classification */
   _provenance?: Record<string, ProvenanceTag | string>;
 }
 
 /** Stream 3: Deviation / As-Built */
 export interface AsBuiltDeviation {
-  /** REAL — foreign key to Stream 1 `componentId` */
-  componentId: string;
+  /**
+   * REAL — foreign key to Stream 1 `componentId`; absent for schedule-only
+   * projects with no BIM/spatial layer.
+   */
+  componentId?: string;
   /** REAL — as-built on-time / too-late flag from event logs */
   onTimeStatus: OnTimeStatus;
   /**
@@ -153,8 +180,11 @@ export interface SiteEngineerPhoto {
   photoId: string;
   /** FORGED — synthetic capture timestamp (ISO 8601 datetime) */
   timestamp: string;
-  /** FORGED — synthetic link to Stream 1 `componentId` */
-  componentId: string;
+  /**
+   * FORGED — synthetic link to Stream 1 `componentId`; absent for
+   * schedule-only projects with no BIM/spatial layer.
+   */
+  componentId?: string;
   /** FORGED — predicted construction milestone class */
   predictedMilestoneClass: PredictedMilestoneClass;
   /** FORGED — model confidence for the predicted class (0–1) */
@@ -174,8 +204,11 @@ export interface SiteEngineerPhoto {
 
 /** Stream 5: Fusion Layer Output */
 export interface FusionOutput {
-  /** REAL — foreign key to Stream 1 `componentId` */
-  componentId: string;
+  /**
+   * REAL — foreign key to Stream 1 `componentId`; absent for schedule-only
+   * projects with no BIM/spatial layer.
+   */
+  componentId?: string;
   /** DERIVED — aggregated completion % from Stream 2 task history (0–100) */
   completionPct: number;
   /** FORGED — synthetic confidence-weighted fusion score (0–1) */

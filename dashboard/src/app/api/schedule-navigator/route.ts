@@ -13,7 +13,15 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
+/**
+ * Project onboarded via the dynamic ingestion pipeline (shared/scripts/
+ * build-project.ts) when no `?project=` query param is given. Every
+ * onboarded project's pre-built bundle lives at
+ * shared/data/projects/<id>/data.json — see dynamic-project-ingestion-plan.md.
+ */
+const DEFAULT_PROJECT_ID = "mspdi-sample";
+
+export async function GET(request: Request) {
   try {
     if (process.env.USE_DUMMY_DATA === "true") {
       const payload = loadJsonFile<ScheduleNavigatorPayload & { dataProvenance?: string }>(
@@ -27,16 +35,19 @@ export async function GET() {
       });
     }
 
-    // schedule.json/fusion.json/deviation.json/metadata.json are not split out
-    // on disk yet — data.json still bundles everything. Destructure from there
-    // instead of regenerating the split files (the split generation script is
-    // more fragile: it depends on raw drone/IFC inputs not guaranteed present).
+    const projectId =
+      new URL(request.url).searchParams.get("project") || DEFAULT_PROJECT_ID;
+
+    // Each onboarded project's data.json is pre-built by build-project.ts
+    // (raw source -> raw-parser -> mapping-engine) — route.ts only ever
+    // reads the already-built bundle, never runs the mapping pipeline
+    // itself, so a request never pays ingestion latency.
     const bundle = loadJsonFile<{
       plannedSchedule: PlannedTask[];
       fusionOutputs: FusionOutput[];
       asBuiltDeviations: AsBuiltDeviation[];
       projectMetadata: ProjectMetadata;
-    }>("data.json");
+    }>(`projects/${projectId}/data.json`);
     const schedule = bundle.plannedSchedule;
     const fusion = bundle.fusionOutputs;
     const deviations = bundle.asBuiltDeviations;

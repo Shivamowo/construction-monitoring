@@ -89,8 +89,10 @@ export interface NavigatorWaypoint {
   /**
    * Predicted delay risk on the projected (forecast) line — distinct from
    * localDelayDays, which only describes delay that has already happened.
-   * Present on 1-2 dummy future waypoints; optional until real pipeline
-   * exposes a risk model.
+   * Present on 1-2 dummy future waypoints; for real MSPDI-sourced projects,
+   * derived from real isCriticalPath/totalSlackDays (zero-float critical
+   * task -> "elevated", a few days of float left -> "watch") — see
+   * forecastRiskFor. Optional wherever the source data has neither.
    */
   forecastRisk?: ForecastRisk;
   /** Structural checkpoint marker; state is derived from timeline.asOf. */
@@ -109,6 +111,14 @@ export interface ScheduleNavigatorPayload {
      * Required on dummy scenario; optional until real pipeline exposes asOf.
      */
     asOf?: string;
+    /**
+     * False when the project has zero as-built tracking (no fusion/deviation
+     * records at all) — nothing has actually been measured yet, so the 3D
+     * scene must not draw an "actual to date" line (there's nothing honest
+     * to show as complete). True (or absent, for the dummy scenario) means
+     * the normal actual-vs-projected split applies.
+     */
+    hasActualData?: boolean;
   };
   waypoints: NavigatorWaypoint[];
   notScheduled: {
@@ -145,6 +155,47 @@ function severityForDelay(days: number): DelaySeverity {
   if (days <= 0) return "none";
   if (days <= 7) return "mild";
   return "severe";
+}
+
+/** Real calendar "today" (UTC date), clamped to not precede the project's own start. */
+function todayClampedToStart(startIso: string): string {
+  const today = formatDate(new Date());
+  return today < startIso ? startIso : today;
+}
+
+/** A task counts as "a few days of float" below this threshold (watch, not yet elevated). */
+const WATCH_SLACK_MAX_DAYS = 5;
+
+/**
+ * Real CPM-driven forecast risk: a critical-path task with zero float is an
+ * "elevated" risk (any delay passes straight through to the finish date,
+ * with no buffer to absorb it); a task with only a few days of slack left
+ * is a "watch" (comfortable float doesn't get flagged at all). Only ever
+ * applies when isCriticalPath/totalSlackDays are actually present in the
+ * source (MSPDI-shaped real data); undefined for projects without them
+ * (e.g. Schependomlaan), same as before this existed.
+ */
+function forecastRiskFor(
+  isCriticalPath: boolean,
+  totalSlackDays: number | null
+): ForecastRisk | undefined {
+  if (isCriticalPath && (totalSlackDays == null || totalSlackDays <= 0)) {
+    return {
+      predictedDelayDays: 0,
+      riskLevel: "elevated",
+      reason:
+        "Zero-float critical-path task — any delay here passes straight through to the project finish date with no buffer to absorb it.",
+    };
+  }
+  if (totalSlackDays != null && totalSlackDays > 0 && totalSlackDays <= WATCH_SLACK_MAX_DAYS) {
+    const days = Math.round(totalSlackDays);
+    return {
+      predictedDelayDays: days,
+      riskLevel: "watch",
+      reason: `Only ${days}d of float remaining before this task turns critical.`,
+    };
+  }
+  return undefined;
 }
 
 /** Deterministic milestoneClass -> delayCategory mapping (reuses dummy's category intent). */
@@ -220,6 +271,10 @@ interface TaskGroup {
   starts: string[];
   ends: string[];
   componentIds: Set<string>;
+  /** True if any task in this group is on the source schedule's critical path. */
+  isCriticalPath: boolean;
+  /** Least float across the group's tasks (the binding constraint); null if source never computed it. */
+  totalSlackDays: number | null;
 }
 
 /**
@@ -237,6 +292,15 @@ export function buildScheduleNavigatorPayload(
 
   const notScheduledCount = fusion.filter((f) => f.deviationFlag === "not_scheduled").length;
 
+  // Zero as-built tracking (no fusion/deviation records at all — nothing's
+  // actually started/been measured, e.g. a freshly-onboarded MSPDI schedule)
+  // means the "latest waypoint with known status" heuristic below has
+  // nothing to find and would otherwise silently fall back to the LAST
+  // waypoint — i.e. "today" renders on top of "planned end" and the whole
+  // path reads as complete. Use the real calendar date instead in that case,
+  // and never synthesize an actual-to-date line for it.
+  const hasAsBuiltData = fusion.length > 0 || deviations.length > 0;
+
   const groups = new Map<string, TaskGroup>();
   for (const task of schedule) {
     const key = task.taskNameEn || task.taskName;
@@ -251,12 +315,24 @@ export function buildScheduleNavigatorPayload(
         starts: [],
         ends: [],
         componentIds: new Set(),
+        isCriticalPath: false,
+        totalSlackDays: null,
       };
       groups.set(key, group);
     }
     group.starts.push(task.plannedStart);
     group.ends.push(task.plannedEnd);
-    group.componentIds.add(task.componentId);
+    // componentId is absent for schedule-only projects with no BIM/spatial
+    // layer — fall back to the task's own taskId so it still counts as one
+    // unit of weight for the S-curve, instead of being silently dropped.
+    group.componentIds.add(task.componentId ?? task.taskId);
+    group.isCriticalPath = group.isCriticalPath || Boolean(task.isCriticalPath);
+    if (task.totalSlackDays != null) {
+      group.totalSlackDays =
+        group.totalSlackDays == null
+          ? task.totalSlackDays
+          : Math.min(group.totalSlackDays, task.totalSlackDays);
+    }
   }
 
   type Draft = Omit<
@@ -302,6 +378,14 @@ export function buildScheduleNavigatorPayload(
     else if (derived > forged) deviationDaysSource = "derived";
     else if (unknownSource > 0 && forged === 0 && derived === 0) deviationDaysSource = "unknown";
 
+    // forecastRisk describes risk on a task that hasn't already slipped —
+    // localDelayDays>0 means it already has a real, measured delay, which is
+    // a different (already-happened) signal, not a forecast.
+    const forecastRisk =
+      localDelayDays === 0
+        ? forecastRiskFor(group.isCriticalPath, group.totalSlackDays)
+        : undefined;
+
     return {
       id: key.replace(/\s+/g, "-").toLowerCase().slice(0, 64),
       taskName: group.taskName,
@@ -313,6 +397,7 @@ export function buildScheduleNavigatorPayload(
       localDelayDays,
       counts: { onTime, behind, ahead, notScheduled, delayedComponents },
       deviationDaysSource,
+      forecastRisk,
     };
   });
 
@@ -329,12 +414,18 @@ export function buildScheduleNavigatorPayload(
 
   // "today" for this historical dataset: latest plannedEnd among waypoints with any
   // known on-time status (onTime+behind+ahead > 0) — the frontier of measured data.
+  // Only meaningful when there IS as-built data; with none, there's no
+  // "frontier of measured data" to find, so use the real calendar date.
   let asOfIndex = -1;
-  drafts.forEach((d, i) => {
-    if (d.counts.onTime + d.counts.behind + d.counts.ahead > 0) asOfIndex = i;
-  });
-  if (asOfIndex === -1) asOfIndex = drafts.length - 1;
-  const asOf = drafts[asOfIndex]?.plannedEnd ?? metadata.overallTimeline.end;
+  if (hasAsBuiltData) {
+    drafts.forEach((d, i) => {
+      if (d.counts.onTime + d.counts.behind + d.counts.ahead > 0) asOfIndex = i;
+    });
+    if (asOfIndex === -1) asOfIndex = drafts.length - 1;
+  }
+  const asOf = hasAsBuiltData
+    ? (drafts[asOfIndex]?.plannedEnd ?? metadata.overallTimeline.end)
+    : todayClampedToStart(metadata.overallTimeline.start);
 
   // Pick one "<class> complete" milestone per tracked class: its last (by plannedEnd) waypoint.
   const milestoneWaypointKeys = new Set<string>();
@@ -361,15 +452,20 @@ export function buildScheduleNavigatorPayload(
     cumulativePlannedRunning += share;
     const cumulativePlannedPct = Math.round(cumulativePlannedRunning * 10) / 10;
 
+    // No actual-to-date line at all when nothing's been measured yet — an
+    // undefined cumulativeActualPct on every waypoint means the 3D scene has
+    // no "complete" data to draw, per hasActualData below.
     let cumulativeActualPct: number | undefined;
-    if (i < asOfIndex) {
-      cumulativeActualPct = cumulativePlannedPct;
-    } else if (i === asOfIndex) {
-      const completedShare =
-        draft.componentCount > 0
-          ? ((draft.counts.onTime + draft.counts.ahead) / draft.componentCount) * share
-          : 0;
-      cumulativeActualPct = Math.round((priorCumulativePlanned + completedShare) * 10) / 10;
+    if (hasAsBuiltData) {
+      if (i < asOfIndex) {
+        cumulativeActualPct = cumulativePlannedPct;
+      } else if (i === asOfIndex) {
+        const completedShare =
+          draft.componentCount > 0
+            ? ((draft.counts.onTime + draft.counts.ahead) / draft.componentCount) * share
+            : 0;
+        cumulativeActualPct = Math.round((priorCumulativePlanned + completedShare) * 10) / 10;
+      }
     }
 
     const severity = severityForDelay(draft.localDelayDays);
@@ -418,6 +514,7 @@ export function buildScheduleNavigatorPayload(
       end: metadata.overallTimeline.end,
       projectedEnd,
       asOf,
+      hasActualData: hasAsBuiltData,
     },
     waypoints,
     notScheduled: {
@@ -434,10 +531,15 @@ export function buildScheduleNavigatorPayload(
       "Projected line color reflects local delay introduced at each waypoint (FORGED deviationDays), not cumulative cascade. Cascade still stretches projected dates rightward.",
       "deviationDays values shown on this view are tagged FORGED (deviationDaysSource). volumetricDeviationPct is FORGED wherever displayed.",
       "1,203 components with deviationFlag not_scheduled are excluded from the projected route and listed separately.",
-      `timeline.asOf (${asOf}) is FORGED: the latest waypoint plannedEnd with any known onTimeStatus (onTime+behind+ahead>0), not a real "today" field in the schema.`,
-      "cumulativePlannedPct/cumulativeActualPct are FORGED: weighted by each waypoint's componentCount share of all scheduled components, same S-curve method as the dummy scenario. The asOf-frontier waypoint gets a partial actual value from its own onTime+ahead share; later waypoints have no actual value.",
+      hasAsBuiltData
+        ? `timeline.asOf (${asOf}) is FORGED: the latest waypoint plannedEnd with any known onTimeStatus (onTime+behind+ahead>0), not a real "today" field in the schema.`
+        : `timeline.asOf (${asOf}) is the real calendar date (clamped to not precede the project's own start): this project has zero as-built tracking (no fusion/deviation records at all), so there is no "frontier of measured data" to derive today from.`,
+      hasAsBuiltData
+        ? "cumulativePlannedPct/cumulativeActualPct are FORGED: weighted by each waypoint's componentCount share of all scheduled components, same S-curve method as the dummy scenario. The asOf-frontier waypoint gets a partial actual value from its own onTime+ahead share; later waypoints have no actual value."
+        : "cumulativeActualPct is intentionally absent on every waypoint (no actual-to-date line is drawn): this project has zero as-built tracking, so there is nothing measured yet to honestly show as complete. cumulativePlannedPct is still DERIVED from componentCount share.",
       "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. catchUpPlan is generated only for waypoints with a severe (>7 day) delay, to keep the alternate-route overlay legible against real data's density of minor slips.",
       "milestone markers are FORGED: one per tracked milestoneClass (Structure/Framing/Envelope/Finishes), placed at that class's last waypoint by plannedEnd.",
+      "forecastRisk is REAL/DERIVED wherever the source schedule provides isCriticalPath/totalSlackDays (MSPDI-sourced projects): a zero-float critical-path task is \"elevated\" risk, a task with 5 or fewer days of float is \"watch\", only ever set on waypoints with no already-realized delay (localDelayDays===0). Absent entirely for projects without real CPM float data (e.g. Schependomlaan).",
     ],
   };
 }

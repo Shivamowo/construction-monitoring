@@ -1,0 +1,24 @@
+{
+  "sourceFormat": "json",
+  "rawFile": "data.json",
+  "passthroughFields": ["fusionOutputs", "asBuiltDeviations"],
+  "taskContainerPath": "plannedSchedule",
+  "fields": {
+    "taskId": { "path": "taskId" },
+    "taskName": { "path": "taskName" },
+    "taskNameEn": { "path": "taskNameEn" },
+    "plannedStart": { "path": "plannedStart" },
+    "plannedEnd": { "path": "plannedEnd" },
+    "componentId": { "path": "componentId" },
+    "weeklyIfcSnapshots": { "path": "weeklyIfcSnapshots" }
+  },
+  "projectMetadata": {
+    "projectId": { "path": "projectMetadata.projectId" },
+    "projectName": { "path": "projectMetadata.projectName" },
+    "overallTimeline.start": { "path": "projectMetadata.overallTimeline.start" },
+    "overallTimeline.end": { "path": "projectMetadata.overallTimeline.end" },
+    "zonesList": { "path": "projectMetadata.zonesList" },
+    "milestoneVocabulary": { "path": "projectMetadata.milestoneVocabulary" },
+    "milestoneMappingTable": { "path": "projectMetadata.milestoneMappingTable" }
+  }
+}

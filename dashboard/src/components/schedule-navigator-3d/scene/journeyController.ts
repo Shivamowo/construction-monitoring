@@ -277,8 +277,13 @@ export function createJourneyController(
   const plannedMesh = createPlannedTube(model.plannedCurve);
   root.add(plannedMesh);
 
-  const actualMesh = createActualTube(model.actualCurve);
-  root.add(actualMesh);
+  // No actual-to-date tube when the project has zero as-built tracking —
+  // nothing's been measured yet, so there's nothing honest to draw as
+  // complete (see NavigatorPathModel.hasActualData).
+  if (model.hasActualData) {
+    const actualMesh = createActualTube(model.actualCurve);
+    root.add(actualMesh);
+  }
 
   let projectedMesh = createOrUpdateProjectedTube(model.projectedCurve);
   root.add(projectedMesh);

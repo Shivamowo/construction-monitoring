@@ -1,0 +1,30 @@
+{
+  "sourceFormat": "mspdi-xml",
+  "rawFile": "mspdi.xml",
+  "taskContainerPath": "Project.Tasks.Task",
+  "skipIf": { "field": "Summary", "equals": "1" },
+  "fields": {
+    "taskId": { "path": "UID" },
+    "taskName": { "path": "Name" },
+    "taskNameEn": { "path": "Name" },
+    "plannedStart": { "path": "Start", "type": "isoDatetime" },
+    "plannedEnd": { "path": "Finish", "type": "isoDatetime" },
+    "isCriticalPath": { "path": "Critical", "type": "boolIntFlag" },
+    "totalSlackDays": { "path": "TotalSlack", "type": "isoDurationToDays", "minutesPerDay": 480 },
+    "predecessors": {
+      "path": "PredecessorLink",
+      "isArray": true,
+      "item": {
+        "taskId": { "path": "PredecessorUID" },
+        "type": { "path": "Type", "type": "enum", "map": { "0": "FF", "1": "FS", "2": "SF", "3": "SS" } },
+        "lagDays": { "path": "LinkLag", "type": "tenthMinutesToDays", "minutesPerDay": 480 }
+      }
+    }
+  },
+  "projectMetadata": {
+    "projectId": { "path": "Project.GUID" },
+    "projectName": { "path": "Project.Title" },
+    "overallTimeline.start": { "path": "Project.StartDate", "type": "isoDatetime" },
+    "overallTimeline.end": { "path": "Project.FinishDate", "type": "isoDatetime" }
+  }
+}
