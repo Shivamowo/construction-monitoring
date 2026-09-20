@@ -20,6 +20,7 @@
 
 .brandBlock {
   min-width: min(100%, 18rem);
+  display: block;
 }
 
 .eyebrow {

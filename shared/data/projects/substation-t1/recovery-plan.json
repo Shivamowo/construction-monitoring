@@ -1,0 +1,30 @@
+{
+  "recoveryPlanId": "substation-rp-001",
+  "appliedAt": "2026-11-10T09:00:00Z",
+  "sourceRef": null,
+  "note": "SELF-AUTHORED DEMO DATA — not yet from the external recovery-plan tool (see shared/scripts/ingest-recovery-plan.ts, still blocked on a real sample export). This is the recovery route OFFERED at the 10 Nov status date: the same re-issue that substation-t2 represents once taken. Shown in the navigator as a previewable alternate route alongside the current projected path.",
+  "revisedTasks": [
+    { "taskId": "10", "newPlannedStart": "2026-11-06", "newPlannedEnd": "2026-11-12" },
+    { "taskId": "11", "newPlannedStart": "2026-11-12", "newPlannedEnd": "2026-12-01" },
+    { "taskId": "12", "newPlannedStart": "2026-11-22", "newPlannedEnd": "2026-12-01" },
+    { "taskId": "15", "newPlannedStart": "2026-12-01", "newPlannedEnd": "2026-12-19" },
+    { "taskId": "14", "newPlannedStart": "2026-12-15", "newPlannedEnd": "2026-12-28" },
+    { "taskId": "16", "newPlannedStart": "2026-12-28", "newPlannedEnd": "2027-01-07" },
+    { "taskId": "18", "newPlannedStart": "2027-01-07", "newPlannedEnd": "2027-01-17" },
+    { "taskId": "19", "newPlannedStart": "2027-01-17", "newPlannedEnd": "2027-01-22" }
+  ],
+  "catchUp": [
+    {
+      "taskId": "4",
+      "daysRecovered": 5,
+      "summary": "Compress Site Clearance from a 10-day to a 6-day baseline (weekend crew) and start Foundations on its heels — recovers 5 of the 6 days Detailed Design put on the cascade.",
+      "resourceCost": "+1 clearance crew on weekends, foundations rebar pulled forward 2 weeks"
+    },
+    {
+      "taskId": "5",
+      "daysRecovered": 2,
+      "summary": "Overlap Cable Trenches with Foundations instead of running them in series — recovers 2 of the 4 days Design Review slipped.",
+      "resourceCost": "+1 civil crew working alongside foundations, shared excavator time"
+    }
+  ]
+}

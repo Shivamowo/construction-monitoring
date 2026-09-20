@@ -697,6 +697,46 @@ export function createMilestoneMarker(spec: {
  */
 const CRITICAL_ACCENT_RADIUS = 0.095;
 
+/**
+ * Milestone-level delay band: a saturated red sleeve laid over the route for
+ * the whole span of a milestone that has run late.
+ *
+ * The point is that delay is a condition of the MILESTONE, not of an isolated
+ * task — a single shard at one task's date reads as "a thing went wrong
+ * here", whereas a band across Engineering's whole span reads as "Engineering
+ * is late", which is the level the alerts are keyed to. Drawn thicker than
+ * the route it covers and with depthWrite off so it reads as an overlay
+ * rather than replacing the line underneath.
+ */
+export const MILESTONE_DELAY_RADIUS = TUBE_RADIUS_ACTUAL * 1.9;
+
+export function createMilestoneDelayTube(points: THREE.Vector3[]): THREE.Mesh {
+  const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.4);
+  const tubular = Math.max(32, Math.floor(curve.getLength() * 10));
+  const geometry = new THREE.TubeGeometry(
+    curve,
+    tubular,
+    MILESTONE_DELAY_RADIUS,
+    TUBE_RADIAL,
+    false
+  );
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#b43a2a"),
+    emissive: new THREE.Color("#5e1a12"),
+    emissiveIntensity: 0.35,
+    metalness: 0,
+    roughness: 0.55,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 3;
+  mesh.name = "milestone-delay-band";
+  mesh.userData.kind = "milestone-delay";
+  return mesh;
+}
+
 export function createCriticalPathAccentTube(
   points: THREE.Vector3[]
 ): THREE.Mesh {

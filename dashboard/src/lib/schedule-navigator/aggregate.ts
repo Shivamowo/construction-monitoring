@@ -8,6 +8,8 @@ import type {
   PredictedMilestoneClass,
   ProjectMetadata,
   ProvenanceTag,
+  RecoveryPlan,
+  RecoveryPlanCatchUp,
 } from "@shared/schema/types";
 
 export type DelaySeverity = "none" | "mild" | "severe";
@@ -406,7 +408,8 @@ export function buildScheduleNavigatorPayload(
   fusion: FusionOutput[],
   deviations: AsBuiltDeviation[],
   metadata: ProjectMetadata,
-  milestones: Milestone[] = []
+  milestones: Milestone[] = [],
+  availableRecovery?: RecoveryPlan
 ): ScheduleNavigatorPayload {
   // Keys normalized to string: real ingested PlannedTask.taskId values can
   // come through as JS numbers (e.g. MSPDI UID attributes parse numeric)
@@ -429,6 +432,9 @@ export function buildScheduleNavigatorPayload(
   const hasAsBuiltData = fusion.length > 0 || deviations.length > 0;
 
   const groups = new Map<string, TaskGroup>();
+  // taskId -> the group key its waypoint ends up under, so a recovery plan
+  // keyed by task can be matched to the waypoint carrying that task's delay.
+  const taskIdToGroupKey = new Map<string, string>();
   for (const task of schedule) {
     const key = task.taskNameEn || task.taskName;
     let group = groups.get(key);
@@ -447,6 +453,7 @@ export function buildScheduleNavigatorPayload(
       };
       groups.set(key, group);
     }
+    taskIdToGroupKey.set(String(task.taskId), key);
     group.starts.push(task.plannedStart);
     group.ends.push(task.plannedEnd);
     // componentId is absent for schedule-only projects with no BIM/spatial
@@ -462,6 +469,16 @@ export function buildScheduleNavigatorPayload(
           ? task.totalSlackDays
           : Math.min(group.totalSlackDays, task.totalSlackDays);
     }
+  }
+
+  // A recovery route on offer for this snapshot: each entry recovers days
+  // against the waypoint carrying that task's measured delay. Built here so
+  // the drafts map below can attach it once localDelayDays is known —
+  // daysRecovered is clamped to what was actually lost there.
+  const catchUpByGroupKey = new Map<string, RecoveryPlanCatchUp>();
+  for (const entry of availableRecovery?.catchUp ?? []) {
+    const groupKey = taskIdToGroupKey.get(String(entry.taskId));
+    if (groupKey) catchUpByGroupKey.set(groupKey, entry);
   }
 
   type Draft = Omit<
@@ -515,6 +532,20 @@ export function buildScheduleNavigatorPayload(
         ? forecastRiskFor(group.isCriticalPath, group.totalSlackDays)
         : undefined;
 
+    // Only meaningful where days were actually lost — recoveryDaysForWaypoint
+    // caps the applied recovery at localDelayDays anyway, so a plan against a
+    // waypoint with no measured delay would be inert.
+    const recoveryEntry = catchUpByGroupKey.get(key);
+    const catchUpPlan: CatchUpPlan | undefined =
+      recoveryEntry && localDelayDays > 0
+        ? {
+            daysLost: localDelayDays,
+            daysRecovered: Math.min(recoveryEntry.daysRecovered, localDelayDays),
+            summary: recoveryEntry.summary,
+            resourceCost: recoveryEntry.resourceCost,
+          }
+        : undefined;
+
     return {
       id: key.replace(/\s+/g, "-").toLowerCase().slice(0, 64),
       taskName: group.taskName,
@@ -527,6 +558,7 @@ export function buildScheduleNavigatorPayload(
       counts: { onTime, behind, ahead, notScheduled, delayedComponents },
       deviationDaysSource,
       forecastRisk,
+      ...(catchUpPlan ? { catchUpPlan } : {}),
     };
   });
 
@@ -617,10 +649,16 @@ export function buildScheduleNavigatorPayload(
       draft.localDelayDays > 0 && delayCategory
         ? delayReasonFor(draft.milestoneClass, delayCategory, severity)
         : undefined;
+    // A REAL catch-up plan carried on the draft (from this project's own
+    // recovery-plan.json) always wins: it describes a recovery actually on
+    // offer, at whatever delay size. The generated one below is FORGED
+    // template text and only fills in for severe delays on projects that
+    // ship no recovery plan of their own.
     const catchUpPlan =
-      severity === "severe" && delayCategory
+      draft.catchUpPlan ??
+      (severity === "severe" && delayCategory
         ? catchUpPlanFor(draft.localDelayDays, delayCategory)
-        : undefined;
+        : undefined);
     const milestone = milestoneWaypointKeys.has(draft.id)
       ? { label: `${draft.milestoneClass} complete` }
       : undefined;
@@ -684,7 +722,7 @@ export function buildScheduleNavigatorPayload(
       hasAsBuiltData
         ? "cumulativePlannedPct/cumulativeActualPct are FORGED: weighted by each waypoint's componentCount share of all scheduled components, same S-curve method as the dummy scenario. The asOf-frontier waypoint gets a partial actual value from its own onTime+ahead share; later waypoints have no actual value."
         : "cumulativeActualPct is intentionally absent on every waypoint (no actual-to-date line is drawn): this project has zero as-built tracking, so there is nothing measured yet to honestly show as complete. cumulativePlannedPct is still DERIVED from componentCount share.",
-      "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. catchUpPlan is generated only for waypoints with a severe (>7 day) delay, to keep the alternate-route overlay legible against real data's density of minor slips.",
+      "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. catchUpPlan is REAL where the project ships its own recovery-plan.json (the route on offer, taken from that file verbatim); otherwise it is FORGED and generated only for waypoints with a severe (>7 day) delay, to keep the alternate-route overlay legible against real data's density of minor slips.",
       "milestone markers are FORGED: one per tracked milestoneClass (Structure/Framing/Envelope/Finishes), placed at that class's last waypoint by plannedEnd.",
       "forecastRisk is REAL/DERIVED wherever the source schedule provides isCriticalPath/totalSlackDays (MSPDI-sourced projects): a zero-float critical-path task is \"elevated\" risk, a task with 5 or fewer days of float is \"watch\", only ever set on waypoints with no already-realized delay (localDelayDays===0). Absent entirely for projects without real CPM float data (e.g. Schependomlaan).",
       milestoneAlerts.length > 0

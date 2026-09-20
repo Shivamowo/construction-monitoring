@@ -15,10 +15,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <div className={styles.brandBlock}>
+        <a className={styles.brandBlock} href="/">
           <p className={styles.eyebrow}>Project: 1</p>
           <h1 className={styles.brand}>Construction Monitor</h1>
-        </div>
+        </a>
         <nav className={styles.nav} aria-label="Dashboard views">
           {NAV.map((item) =>
             "soon" in item && item.soon ? (

@@ -169,6 +169,7 @@ export function ScheduleNavigator3D() {
       {
         waypoints: data.waypoints,
         timeline: data.timeline,
+        milestoneAlerts: data.milestoneAlerts,
         axisOverlay: axisOverlayRef.current,
         axisClassNames: {
           month: styles.axisMonth,
@@ -1049,6 +1050,9 @@ export function ScheduleNavigator3D() {
             </li>
             <li>
               <i className={styles.swatchShard} /> Delay indicator
+            </li>
+            <li>
+              <i className={styles.swatchMilestoneDelay} /> Milestone running late
             </li>
             <li>
               <i className={styles.swatchForecast} /> Predicted risk

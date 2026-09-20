@@ -916,6 +916,17 @@
   transform: rotate(15deg);
 }
 
+/* Milestone-wide delay reads as a BAND, not a point — the swatch is a bar
+   rather than a dot so the legend matches what the route actually shows. */
+.swatchMilestoneDelay {
+  width: 1.05rem;
+  height: 0.3rem;
+  border-radius: 1px;
+  flex-shrink: 0;
+  background: #b43a2a;
+  opacity: 0.78;
+}
+
 .swatchForecast {
   width: 0.45rem;
   height: 0.45rem;

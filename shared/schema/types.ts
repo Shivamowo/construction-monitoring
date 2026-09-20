@@ -371,6 +371,25 @@ export interface RecoveryPlanRevisedTask {
   newTotalSlackDays?: number | null;
 }
 
+/**
+ * SKELETON — one recoverable chunk of an offered recovery route.
+ *
+ * `taskId` is the task whose ALREADY-MEASURED delay this recovers against,
+ * not the task being re-sequenced: the cascade model keys recovery off the
+ * waypoint carrying the delay, so that is where the days claw back.
+ * `summary` carries what is actually being done on site, which is usually
+ * work on entirely different (downstream) tasks.
+ */
+export interface RecoveryPlanCatchUp {
+  taskId: string;
+  /** Days clawed back. Clamped downstream to that task's own delay. */
+  daysRecovered: number;
+  /** What is actually being done on site to recover them. */
+  summary: string;
+  /** What taking this route costs — crew, plant, sequence risk. */
+  resourceCost: string;
+}
+
 /** SKELETON — see RecoveryPlanRevisedTask; not a finished contract. */
 export interface RecoveryPlan {
   recoveryPlanId: string;
@@ -379,6 +398,12 @@ export interface RecoveryPlan {
   /** Reference/link back to the external recovery-plan tool's own record, if it provides one. */
   sourceRef?: string;
   revisedTasks: RecoveryPlanRevisedTask[];
+  /**
+   * The same recovery expressed as per-task catch-up entries, so the
+   * navigator can PREVIEW the route as an alternate line before it is taken,
+   * rather than only showing the result after the fact.
+   */
+  catchUp?: RecoveryPlanCatchUp[];
   /** Verbatim note from the recovery-plan tool, if it provides one — never fabricated. */
   note?: string;
 }

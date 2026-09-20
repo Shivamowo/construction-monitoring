@@ -9,6 +9,7 @@ import { CustomEase } from "gsap/CustomEase";
 import type {
   DelayCategory,
   DelaySeverity,
+  MilestoneAlert,
   NavigatorWaypoint,
   ScheduleNavigatorPayload,
 } from "@/lib/schedule-navigator/aggregate";
@@ -32,6 +33,7 @@ import {
   CRITICAL_MARKER_Y_OFFSET,
   createForecastShard,
   createGhostRouteLine,
+  createMilestoneDelayTube,
   createOrUpdateProjectedTube,
   createOrUpdateTakenRouteTube,
   createPlannedTube,
@@ -143,6 +145,13 @@ interface CommitSnapshot {
 export interface JourneyControllerOptions {
   waypoints: NavigatorWaypoint[];
   timeline: ScheduleNavigatorPayload["timeline"];
+  /**
+   * Milestone-level alerts. Any with delayDays > 0 gets a red band drawn
+   * across its span on the route — delay shown at the level it is assessed,
+   * rather than only as per-task shards. Empty/absent for projects with no
+   * milestone structure (e.g. Schependomlaan).
+   */
+  milestoneAlerts?: MilestoneAlert[];
   /** DOM host for screen-projected axis labels (inside the viewport). */
   axisOverlay: HTMLElement;
   axisClassNames: {
@@ -376,6 +385,39 @@ export function createJourneyController(
       mesh.visible = criticalPathVisualsEnabled;
       root.add(mesh);
       return { mesh };
+    });
+
+  /**
+   * Milestone delay bands. A milestone's span can straddle `today`: the part
+   * already behind us rides the actual-to-date curve, the part ahead rides
+   * the projected one, so the band sits on whichever line is actually being
+   * drawn at that X rather than floating off it. Sampled per-point for that
+   * reason instead of using one curve for the whole span.
+   */
+  function milestoneBandPoints(startIso: string, endIso: string): THREE.Vector3[] {
+    const startX = dateToX(startIso, model.timelineScale);
+    const endX = dateToX(endIso, model.timelineScale);
+    const todayX = dateToX(model.todayIso, model.timelineScale);
+    const samples = 22;
+    return Array.from({ length: samples }, (_, index) => {
+      const x = THREE.MathUtils.lerp(startX, endX, index / (samples - 1));
+      const onActual = model.hasActualData && x <= todayX;
+      const curve = onActual ? model.actualCurve : model.projectedCurve;
+      return curvePointAtX(curve, x).position;
+    });
+  }
+
+  const milestoneDelayBands = (options.milestoneAlerts ?? [])
+    .filter((alert) => alert.delayDays > 0)
+    .map((alert) => {
+      const mesh = createMilestoneDelayTube(
+        milestoneBandPoints(alert.plannedStart, alert.plannedEnd)
+      );
+      mesh.userData.milestoneId = alert.milestoneId;
+      mesh.userData.milestoneName = alert.milestoneName;
+      mesh.userData.delayDays = alert.delayDays;
+      root.add(mesh);
+      return mesh;
     });
 
   const criticalGroups = model.criticalPath.map((critical) => {

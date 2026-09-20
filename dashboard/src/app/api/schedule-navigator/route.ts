@@ -5,6 +5,7 @@ import type {
   Milestone,
   PlannedTask,
   ProjectMetadata,
+  RecoveryPlan,
 } from "@shared/schema/types";
 import { loadJsonFile } from "@/lib/data/loadJson";
 import {
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
       fusionOutputs: FusionOutput[];
       asBuiltDeviations: AsBuiltDeviation[];
       projectMetadata: ProjectMetadata;
+      availableRecovery?: RecoveryPlan;
       milestones?: Milestone[];
     }>(`projects/${projectId}/data.json`);
     const schedule = bundle.plannedSchedule;
@@ -61,7 +63,8 @@ export async function GET(request: Request) {
       fusion,
       deviations,
       metadata,
-      milestones
+      milestones,
+      bundle.availableRecovery
     );
 
     return NextResponse.json(payload, {

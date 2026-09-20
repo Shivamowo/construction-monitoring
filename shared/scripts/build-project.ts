@@ -17,6 +17,7 @@ import path from "node:path";
 import type {
   AsBuiltDeviation,
   FusionOutput,
+  RecoveryPlan,
 } from "../schema/types";
 import { runMappingEngine, type MappingConfig } from "./mapping-engine";
 import { parseRawFile, type SourceFormat } from "./raw-parsers";
@@ -71,8 +72,24 @@ function buildProject(projectId: string): void {
     if (key === "asBuiltDeviations" && Array.isArray(value)) asBuiltDeviations = value as AsBuiltDeviation[];
   }
 
+  // A recovery-plan.json sitting beside the source means a recovery route is
+  // ON OFFER for this snapshot — carried through to the payload so the
+  // navigator can draw it as a previewable alternate route. Absent for
+  // snapshots with no recovery available, which is most of them.
+  const planPath = path.join(PROJECTS_DIR, projectId, "recovery-plan.json");
+  const availableRecovery = fs.existsSync(planPath)
+    ? (JSON.parse(fs.readFileSync(planPath, "utf8")) as RecoveryPlan)
+    : undefined;
+
   const outPath = path.join(PROJECTS_DIR, projectId, "data.json");
-  writeJson(outPath, { plannedSchedule, fusionOutputs, asBuiltDeviations, projectMetadata, milestones });
+  writeJson(outPath, {
+    plannedSchedule,
+    fusionOutputs,
+    asBuiltDeviations,
+    projectMetadata,
+    milestones,
+    ...(availableRecovery ? { availableRecovery } : {}),
+  });
 
   const critical = plannedSchedule.filter((t) => t.isCriticalPath).length;
   const predecessorEdges = plannedSchedule.reduce((sum, t) => sum + (t.predecessors?.length ?? 0), 0);
