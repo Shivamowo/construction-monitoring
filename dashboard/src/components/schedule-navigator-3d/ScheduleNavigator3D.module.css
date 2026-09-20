@@ -11,23 +11,27 @@
   --chrome-gap: var(--space-3);
   --chrome-radius: var(--radius);
   --chrome-bg: linear-gradient(165deg,
-      rgba(255, 255, 255, 0.92) 0%,
-      rgba(247, 250, 252, 0.92) 55%,
-      rgba(240, 243, 248, 0.92) 100%);
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(250, 250, 249, 0.96) 55%,
+      rgba(245, 245, 242, 0.96) 100%);
   --chrome-bg-soft: linear-gradient(165deg,
-      rgba(255, 255, 255, 0.8) 0%,
-      rgba(243, 246, 250, 0.85) 100%);
-  --chrome-border: rgba(36, 48, 65, 0.12);
-  --chrome-border-strong: rgba(36, 48, 65, 0.2);
+      rgba(255, 255, 255, 0.85) 0%,
+      rgba(247, 247, 245, 0.88) 100%);
+  --chrome-border: rgba(20, 20, 20, 0.12);
+  --chrome-border-strong: rgba(20, 20, 20, 0.22);
   --chrome-text: var(--ink);
-  --chrome-muted: rgba(36, 48, 65, 0.7);
-  --chrome-faint: rgba(36, 48, 65, 0.5);
-  --chrome-accent: #5f7a4f;
-  --chrome-accent-strong: #4a6440;
-  --chrome-accent-bg: rgba(139, 154, 110, 0.14);
-  --chrome-accent-bg-hover: rgba(139, 154, 110, 0.24);
-  --chrome-accent-border: rgba(95, 122, 79, 0.45);
-  --chrome-accent-border-strong: rgba(95, 122, 79, 0.75);
+  --chrome-muted: rgba(20, 20, 20, 0.7);
+  --chrome-faint: rgba(20, 20, 20, 0.5);
+  /* EY brand pass: accent surfaces are black text/icon on a yellow-tinted
+     highlight (EY's real active/CTA pairing) rather than a brand-colored
+     text color — pure yellow text fails contrast, so yellow stays confined
+     to backgrounds/borders and black carries the readable ink. */
+  --chrome-accent: #141414;
+  --chrome-accent-strong: #000000;
+  --chrome-accent-bg: rgba(255, 230, 0, 0.22);
+  --chrome-accent-bg-hover: rgba(255, 230, 0, 0.38);
+  --chrome-accent-border: rgba(224, 196, 0, 0.6);
+  --chrome-accent-border-strong: rgba(224, 196, 0, 0.9);
   /* Route-preview line gray — distinct token from --chrome-accent (button/CTA
      chrome) even though today's chrome-accent sage predates this palette. */
   --route-alt: #424c5b;
@@ -42,11 +46,9 @@
   flex: 1;
   padding: var(--space-4);
   border-radius: calc(var(--chrome-radius) + 2px);
-  background:
-    radial-gradient(900px 480px at 12% 0%, rgba(95, 110, 130, 0.1), transparent 55%),
-    linear-gradient(165deg, #f7f2e9 0%, #f1ece2 55%, #ebe5d8 100%);
-  border: 1px solid rgba(120, 128, 138, 0.28);
-  box-shadow: 0 18px 48px rgba(90, 80, 70, 0.18);
+  background: linear-gradient(165deg, #ffffff 0%, #f7f7f5 55%, #f0f0ec 100%);
+  border: 1px solid rgba(20, 20, 20, 0.16);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.1);
 }
 
 /* —— Shared chrome panel surface —— */
