@@ -1,0 +1,307 @@
+{
+  "plannedSchedule": [
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 3,
+      "taskName": "Design Basis Report",
+      "taskNameEn": "Design Basis Report",
+      "plannedStart": "2026-10-01",
+      "plannedEnd": "2026-10-11",
+      "isCriticalPath": true,
+      "totalSlackDays": 0
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 4,
+      "taskName": "Detailed Design",
+      "taskNameEn": "Detailed Design",
+      "plannedStart": "2026-10-11",
+      "plannedEnd": "2026-10-31",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 3,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 5,
+      "taskName": "Design Review",
+      "taskNameEn": "Design Review",
+      "plannedStart": "2026-10-21",
+      "plannedEnd": "2026-10-26",
+      "isCriticalPath": false,
+      "totalSlackDays": 5,
+      "predecessors": [
+        {
+          "taskId": 4,
+          "type": "SS",
+          "lagDays": 10
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 7,
+      "taskName": "Transformer Order",
+      "taskNameEn": "Transformer Order",
+      "plannedStart": "2026-10-16",
+      "plannedEnd": "2026-10-21",
+      "isCriticalPath": false,
+      "totalSlackDays": 12,
+      "predecessors": [
+        {
+          "taskId": 4,
+          "type": "SS",
+          "lagDays": 5
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 8,
+      "taskName": "Transformer Delivery",
+      "taskNameEn": "Transformer Delivery",
+      "plannedStart": "2026-10-21",
+      "plannedEnd": "2026-12-15",
+      "isCriticalPath": false,
+      "totalSlackDays": 12,
+      "predecessors": [
+        {
+          "taskId": 7,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 10,
+      "taskName": "Site Clearance",
+      "taskNameEn": "Site Clearance",
+      "plannedStart": "2026-10-31",
+      "plannedEnd": "2026-11-10",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 4,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 11,
+      "taskName": "Foundations",
+      "taskNameEn": "Foundations",
+      "plannedStart": "2026-11-10",
+      "plannedEnd": "2026-12-05",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 10,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 12,
+      "taskName": "Cable Trenches",
+      "taskNameEn": "Cable Trenches",
+      "plannedStart": "2026-11-20",
+      "plannedEnd": "2026-12-05",
+      "isCriticalPath": false,
+      "totalSlackDays": 15,
+      "predecessors": [
+        {
+          "taskId": 11,
+          "type": "SS",
+          "lagDays": 10
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 14,
+      "taskName": "Transformer Erection",
+      "taskNameEn": "Transformer Erection",
+      "plannedStart": "2026-12-15",
+      "plannedEnd": "2026-12-30",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 11,
+          "type": "FS",
+          "lagDays": 10
+        },
+        {
+          "taskId": 8,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 15,
+      "taskName": "Cabling",
+      "taskNameEn": "Cabling",
+      "plannedStart": "2026-12-05",
+      "plannedEnd": "2026-12-25",
+      "isCriticalPath": false,
+      "totalSlackDays": 5,
+      "predecessors": [
+        {
+          "taskId": 12,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 16,
+      "taskName": "Protection & Control",
+      "taskNameEn": "Protection & Control",
+      "plannedStart": "2027-01-04",
+      "plannedEnd": "2027-01-14",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 14,
+          "type": "FF",
+          "lagDays": 5
+        },
+        {
+          "taskId": 15,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 18,
+      "taskName": "Pre-commissioning Tests",
+      "taskNameEn": "Pre-commissioning Tests",
+      "plannedStart": "2027-01-14",
+      "plannedEnd": "2027-01-24",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 16,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    },
+    {
+      "weeklyIfcSnapshots": [],
+      "taskId": 19,
+      "taskName": "Energisation",
+      "taskNameEn": "Energisation",
+      "plannedStart": "2027-01-24",
+      "plannedEnd": "2027-01-29",
+      "isCriticalPath": true,
+      "totalSlackDays": 0,
+      "predecessors": [
+        {
+          "taskId": 18,
+          "type": "FS",
+          "lagDays": 0
+        }
+      ]
+    }
+  ],
+  "fusionOutputs": [],
+  "asBuiltDeviations": [],
+  "projectMetadata": {
+    "zonesList": [],
+    "milestoneVocabulary": {},
+    "milestoneMappingTable": [],
+    "projectId": "CD2AE456-0BC7-4447-8221-75E49FD9F3EB",
+    "projectName": "Sample Substation Project — Plan as Issued",
+    "overallTimeline": {
+      "start": "2026-10-01",
+      "end": "2027-01-29"
+    },
+    "statusDate": "2026-10-01"
+  },
+  "milestones": [
+    {
+      "milestoneId": "2",
+      "milestoneName": "Engineering",
+      "plannedStart": "2026-10-01",
+      "plannedEnd": "2026-10-31",
+      "memberTaskIds": [
+        "3",
+        "4",
+        "5"
+      ],
+      "isCriticalPath": false,
+      "totalSlackDays": null
+    },
+    {
+      "milestoneId": "6",
+      "milestoneName": "Procurement",
+      "plannedStart": "2026-10-16",
+      "plannedEnd": "2026-12-15",
+      "memberTaskIds": [
+        "7",
+        "8"
+      ],
+      "isCriticalPath": false,
+      "totalSlackDays": null
+    },
+    {
+      "milestoneId": "9",
+      "milestoneName": "Civil Works",
+      "plannedStart": "2026-10-31",
+      "plannedEnd": "2026-12-20",
+      "memberTaskIds": [
+        "10",
+        "11",
+        "12"
+      ],
+      "isCriticalPath": false,
+      "totalSlackDays": null
+    },
+    {
+      "milestoneId": "13",
+      "milestoneName": "Installation",
+      "plannedStart": "2026-12-05",
+      "plannedEnd": "2027-01-14",
+      "memberTaskIds": [
+        "14",
+        "15",
+        "16"
+      ],
+      "isCriticalPath": false,
+      "totalSlackDays": null
+    },
+    {
+      "milestoneId": "17",
+      "milestoneName": "Commissioning",
+      "plannedStart": "2027-01-14",
+      "plannedEnd": "2027-01-29",
+      "memberTaskIds": [
+        "18",
+        "19"
+      ],
+      "isCriticalPath": false,
+      "totalSlackDays": null
+    }
+  ]
+}

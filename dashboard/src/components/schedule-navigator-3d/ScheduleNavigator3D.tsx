@@ -118,7 +118,19 @@ export function ScheduleNavigator3D() {
 
     (async () => {
       try {
-        const res = await fetch("/api/schedule-navigator");
+        // Forward ?project=<id> from the browser URL so the navigator can be
+        // pointed at any onboarded project (the three Sample Substation
+        // snapshots, Schependomlaan, ...). Without this the route always
+        // served DEFAULT_PROJECT_ID and every ?project= URL rendered
+        // identically. Read from window at fetch time rather than
+        // useSearchParams() so this client component needs no Suspense
+        // boundary.
+        const projectId = new URLSearchParams(window.location.search).get("project");
+        const res = await fetch(
+          projectId
+            ? `/api/schedule-navigator?project=${encodeURIComponent(projectId)}`
+            : "/api/schedule-navigator"
+        );
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error || `HTTP ${res.status}`);

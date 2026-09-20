@@ -330,6 +330,13 @@ export interface ProjectMetadata {
   projectName: string;
   /** DERIVED — min/max of Stream 2 planned dates */
   overallTimeline: OverallTimeline;
+  /**
+   * REAL — the schedule's own status date ("as of" date), when the source
+   * format carries one (MSPDI `Project/StatusDate`). Absent for sources that
+   * don't publish one, in which case the navigator falls back to deriving an
+   * asOf from the frontier of measured data — see aggregate.ts.
+   */
+  statusDate?: string;
   /** DERIVED — distinct zone labels from IFC spatial hierarchy */
   zonesList: string[];
   /**

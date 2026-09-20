@@ -57,6 +57,14 @@ export interface MilestoneAlert {
   isCriticalPath: boolean;
   /** DERIVED — MIN totalSlackDays across member tasks; null if none carry slack data. */
   totalSlackDays: number | null;
+  /**
+   * DERIVED — how many days this milestone is ALREADY measured behind: the
+   * worst own-delay across its member tasks. 0 means nothing in it has
+   * slipped yet (which is not the same as "safe" — see forecastRisk).
+   * This is the headline figure for a milestone-level delay alert; rootCause
+   * says which task(s) it came from.
+   */
+  delayDays: number;
   /** Same forecastRiskFor() logic as per-task waypoints, applied at milestone level. */
   forecastRisk?: ForecastRisk;
   /** DERIVED — only present when the milestone itself is at risk or already delayed. */
@@ -374,6 +382,11 @@ function computeMilestoneAlerts(
     const forecastRisk =
       alreadyBehind.length === 0 ? forecastRiskFor(isCriticalPath, totalSlackDays) : undefined;
 
+    // Worst own-delay across ALL members (not just critical ones): a
+    // milestone is late if anything inside it is late, even where float
+    // means it isn't driving the project finish.
+    const delayDays = members.reduce((worst, t) => Math.max(worst, ownDelayDays(t)), 0);
+
     return {
       milestoneId: milestone.milestoneId,
       milestoneName: milestone.milestoneName,
@@ -381,6 +394,7 @@ function computeMilestoneAlerts(
       plannedEnd: milestone.plannedEnd,
       isCriticalPath,
       totalSlackDays,
+      delayDays,
       forecastRisk,
       rootCause,
     };
@@ -531,16 +545,29 @@ export function buildScheduleNavigatorPayload(
   // known on-time status (onTime+behind+ahead > 0) — the frontier of measured data.
   // Only meaningful when there IS as-built data; with none, there's no
   // "frontier of measured data" to find, so use the real calendar date.
+  // Preferred source: the schedule's own status date, when the source format
+  // publishes one (MSPDI Project/StatusDate). That's a REAL "as of" field
+  // stated by whoever issued the schedule, so it beats both heuristics below.
+  const statusDate = metadata.statusDate;
   let asOfIndex = -1;
-  if (hasAsBuiltData) {
+  if (statusDate) {
+    // Frontier = last waypoint whose planned end has already passed as of the
+    // stated status date. -1 (nothing passed yet) is valid and means the
+    // status date sits before the first waypoint completes.
+    drafts.forEach((d, i) => {
+      if (d.plannedEnd <= statusDate) asOfIndex = i;
+    });
+  } else if (hasAsBuiltData) {
     drafts.forEach((d, i) => {
       if (d.counts.onTime + d.counts.behind + d.counts.ahead > 0) asOfIndex = i;
     });
     if (asOfIndex === -1) asOfIndex = drafts.length - 1;
   }
-  const asOf = hasAsBuiltData
-    ? (drafts[asOfIndex]?.plannedEnd ?? metadata.overallTimeline.end)
-    : todayClampedToStart(metadata.overallTimeline.start);
+  const asOf = statusDate
+    ? statusDate
+    : hasAsBuiltData
+      ? (drafts[asOfIndex]?.plannedEnd ?? metadata.overallTimeline.end)
+      : todayClampedToStart(metadata.overallTimeline.start);
 
   // Pick one "<class> complete" milestone per tracked class: its last (by plannedEnd) waypoint.
   const milestoneWaypointKeys = new Set<string>();
@@ -650,7 +677,9 @@ export function buildScheduleNavigatorPayload(
       "deviationDays values shown on this view are tagged FORGED (deviationDaysSource). volumetricDeviationPct is FORGED wherever displayed.",
       "1,203 components with deviationFlag not_scheduled are excluded from the projected route and listed separately.",
       hasAsBuiltData
-        ? `timeline.asOf (${asOf}) is FORGED: the latest waypoint plannedEnd with any known onTimeStatus (onTime+behind+ahead>0), not a real "today" field in the schema.`
+        ? statusDate
+          ? `timeline.asOf (${asOf}) is REAL: the source schedule's own status date (e.g. MSPDI Project/StatusDate), as stated by whoever issued it.`
+          : `timeline.asOf (${asOf}) is FORGED: the latest waypoint plannedEnd with any known onTimeStatus (onTime+behind+ahead>0), not a real "today" field in the schema.`
         : `timeline.asOf (${asOf}) is the real calendar date (clamped to not precede the project's own start): this project has zero as-built tracking (no fusion/deviation records at all), so there is no "frontier of measured data" to derive today from.`,
       hasAsBuiltData
         ? "cumulativePlannedPct/cumulativeActualPct are FORGED: weighted by each waypoint's componentCount share of all scheduled components, same S-curve method as the dummy scenario. The asOf-frontier waypoint gets a partial actual value from its own onTime+ahead share; later waypoints have no actual value."
