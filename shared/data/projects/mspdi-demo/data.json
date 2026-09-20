@@ -225,8 +225,34 @@
       ]
     }
   ],
-  "fusionOutputs": [],
-  "asBuiltDeviations": [],
+  "fusionOutputs": [
+    {
+      "componentId": "3",
+      "completionPct": 100,
+      "deviationFlag": "on_time",
+      "lastUpdated": "2026-10-11"
+    },
+    {
+      "componentId": "4",
+      "completionPct": 100,
+      "deviationFlag": "behind",
+      "lastUpdated": "2026-11-06"
+    }
+  ],
+  "asBuiltDeviations": [
+    {
+      "componentId": "3",
+      "onTimeStatus": "on_time",
+      "deviationDays": 0,
+      "deviationDaysSource": "derived"
+    },
+    {
+      "componentId": "4",
+      "onTimeStatus": "too_late",
+      "deviationDays": 6,
+      "deviationDaysSource": "derived"
+    }
+  ],
   "projectMetadata": {
     "zonesList": [],
     "milestoneVocabulary": {},

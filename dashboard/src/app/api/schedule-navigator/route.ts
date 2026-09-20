@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type {
   AsBuiltDeviation,
   FusionOutput,
+  Milestone,
   PlannedTask,
   ProjectMetadata,
 } from "@shared/schema/types";
@@ -47,17 +48,20 @@ export async function GET(request: Request) {
       fusionOutputs: FusionOutput[];
       asBuiltDeviations: AsBuiltDeviation[];
       projectMetadata: ProjectMetadata;
+      milestones?: Milestone[];
     }>(`projects/${projectId}/data.json`);
     const schedule = bundle.plannedSchedule;
     const fusion = bundle.fusionOutputs;
     const deviations = bundle.asBuiltDeviations;
     const metadata = bundle.projectMetadata;
+    const milestones = bundle.milestones ?? [];
 
     const payload = buildScheduleNavigatorPayload(
       schedule,
       fusion,
       deviations,
-      metadata
+      metadata,
+      milestones
     );
 
     return NextResponse.json(payload, {

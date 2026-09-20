@@ -1,0 +1,9 @@
+{
+  "recoveryPlanId": "demo-rp-001",
+  "appliedAt": "2026-11-10T09:00:00Z",
+  "sourceRef": null,
+  "note": "SELF-AUTHORED DEMO DATA for the showcase prototype — NOT from the real external recovery-plan tool, which does not exist yet (stage 3 is still blocked on that). Represents a plausible recovery route: compress Site Clearance from a 10-working-day to a 6-working-day baseline (weekend crew) to recover 4 of the 6 days lost when Detailed Design finished late.",
+  "revisedTasks": [
+    { "taskId": "10", "newPlannedStart": "2026-10-31", "newPlannedEnd": "2026-11-06" }
+  ]
+}

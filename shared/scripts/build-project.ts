@@ -51,10 +51,20 @@ function buildProject(projectId: string): void {
   const rawPath = path.join(PROJECTS_DIR, projectId, "raw", config.rawFile);
   const rawTree = parseRawFile(rawPath, config.sourceFormat as SourceFormat);
 
-  const { plannedSchedule, projectMetadata } = runMappingEngine(config, rawTree);
+  const {
+    plannedSchedule,
+    projectMetadata,
+    milestones,
+    fusionOutputs: derivedFusionOutputs,
+    asBuiltDeviations: derivedAsBuiltDeviations,
+  } = runMappingEngine(config, rawTree);
 
-  let fusionOutputs: FusionOutput[] = [];
-  let asBuiltDeviations: AsBuiltDeviation[] = [];
+  // Engine-derived (from config.asBuilt, real Actual* fields) is the default;
+  // passthroughFields overrides for sources whose raw file IS ALREADY a
+  // canonical bundle (Schependomlaan) — the two are mutually exclusive in
+  // practice (a config sets one or the other, never both).
+  let fusionOutputs: FusionOutput[] = derivedFusionOutputs;
+  let asBuiltDeviations: AsBuiltDeviation[] = derivedAsBuiltDeviations;
   for (const key of config.passthroughFields ?? []) {
     const value = (rawTree as Record<string, unknown>)[key];
     if (key === "fusionOutputs" && Array.isArray(value)) fusionOutputs = value as FusionOutput[];
@@ -62,7 +72,7 @@ function buildProject(projectId: string): void {
   }
 
   const outPath = path.join(PROJECTS_DIR, projectId, "data.json");
-  writeJson(outPath, { plannedSchedule, fusionOutputs, asBuiltDeviations, projectMetadata });
+  writeJson(outPath, { plannedSchedule, fusionOutputs, asBuiltDeviations, projectMetadata, milestones });
 
   const critical = plannedSchedule.filter((t) => t.isCriticalPath).length;
   const predecessorEdges = plannedSchedule.reduce((sum, t) => sum + (t.predecessors?.length ?? 0), 0);
@@ -71,6 +81,7 @@ function buildProject(projectId: string): void {
   console.log(`  predecessor edges: ${predecessorEdges}`);
   console.log(`  critical-path tasks: ${critical}`);
   console.log(`  fusionOutputs: ${fusionOutputs.length}, asBuiltDeviations: ${asBuiltDeviations.length}`);
+  console.log(`  milestones: ${milestones.length} (${milestones.map((m) => m.milestoneName).join(", ")})`);
   console.log(`  project: ${projectMetadata.projectName} (${projectMetadata.projectId})`);
 }
 
