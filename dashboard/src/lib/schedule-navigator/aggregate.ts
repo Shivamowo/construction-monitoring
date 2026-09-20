@@ -2,6 +2,8 @@ import type {
   AsBuiltDeviation,
   DeviationDaysSource,
   FusionOutput,
+  Milestone,
+  MilestoneRootCause,
   PlannedTask,
   PredictedMilestoneClass,
   ProjectMetadata,
@@ -36,6 +38,29 @@ export interface ForecastRisk {
 
 export interface StructuralMilestone {
   label: string;
+}
+
+/**
+ * Milestone-level delay/risk alert — the "alert us at milestone delay"
+ * trigger, distinct from per-task-group forecastRisk on waypoints. Rolled
+ * up from a project's own Milestone records (memberTaskIds cross-referenced
+ * against the current plannedSchedule + deviations), same any/min pattern
+ * as TaskGroup. Empty array for projects without a milestone structure
+ * (e.g. Schependomlaan).
+ */
+export interface MilestoneAlert {
+  milestoneId: string;
+  milestoneName: string;
+  plannedStart: string;
+  plannedEnd: string;
+  /** DERIVED — true if ANY member task is on the critical path. */
+  isCriticalPath: boolean;
+  /** DERIVED — MIN totalSlackDays across member tasks; null if none carry slack data. */
+  totalSlackDays: number | null;
+  /** Same forecastRiskFor() logic as per-task waypoints, applied at milestone level. */
+  forecastRisk?: ForecastRisk;
+  /** DERIVED — only present when the milestone itself is at risk or already delayed. */
+  rootCause?: MilestoneRootCause[];
 }
 
 export interface NavigatorWaypoint {
@@ -121,6 +146,8 @@ export interface ScheduleNavigatorPayload {
     hasActualData?: boolean;
   };
   waypoints: NavigatorWaypoint[];
+  /** Absent on the dummy scenario (predates this feature); always an array (possibly empty) on the real pipeline. */
+  milestoneAlerts?: MilestoneAlert[];
   notScheduled: {
     count: number;
     note: string;
@@ -281,14 +308,100 @@ interface TaskGroup {
  * Aggregate schedule + fusion + deviation into Maps-style route waypoints
  * with an illustrative cascading delay on the projected line.
  */
+/**
+ * Roll up Milestone.memberTaskIds against the current schedule + deviations
+ * into MilestoneAlert records: isCriticalPath (any)/totalSlackDays (min)
+ * same as TaskGroup, plus a DERIVED root cause pointing at the specific
+ * critical-path member task(s) driving the delay/risk — never a fabricated
+ * narrative reason. Kept as its own pass (not folded into the TaskGroup
+ * loop above) because milestones group by source-schedule hierarchy, not
+ * by taskNameEn identity.
+ */
+function computeMilestoneAlerts(
+  milestones: Milestone[],
+  schedule: PlannedTask[],
+  deviationBy: Map<string, AsBuiltDeviation>
+): MilestoneAlert[] {
+  // taskId on real ingested data can come through as a number (raw MSPDI UID
+  // attributes parse numeric) even though the schema types it as string —
+  // normalize both sides to string so the lookup doesn't silently miss.
+  const taskById = new Map(schedule.map((t) => [String(t.taskId), t]));
+
+  const ownDelayDays = (task: PlannedTask): number => {
+    const d = deviationBy.get(String(task.componentId ?? task.taskId));
+    return d?.deviationDays != null && d.deviationDays > 0 ? d.deviationDays : 0;
+  };
+
+  return milestones.map((milestone) => {
+    const members = milestone.memberTaskIds
+      .map((id) => taskById.get(String(id)))
+      .filter((t): t is PlannedTask => Boolean(t));
+
+    const isCriticalPath = members.some((t) => Boolean(t.isCriticalPath));
+    let totalSlackDays: number | null = null;
+    for (const t of members) {
+      if (t.totalSlackDays != null) {
+        totalSlackDays = totalSlackDays == null ? t.totalSlackDays : Math.min(totalSlackDays, t.totalSlackDays);
+      }
+    }
+
+    // As-built case: a critical-path member already measured behind its
+    // planned end — this IS the root cause, not a forecast.
+    const alreadyBehind = members
+      .filter((t) => t.isCriticalPath && ownDelayDays(t) > 0)
+      .sort((a, b) => ownDelayDays(b) - ownDelayDays(a));
+
+    let rootCause: MilestoneRootCause[] | undefined;
+    if (alreadyBehind.length > 0) {
+      rootCause = alreadyBehind.map((t) => ({
+        taskId: t.taskId,
+        taskName: t.taskNameEn || t.taskName,
+        reason: `${ownDelayDays(t)} day(s) behind planned end (critical path).`,
+      }));
+    } else if (isCriticalPath && (totalSlackDays == null || totalSlackDays <= 0)) {
+      // Forecast case: nothing has slipped yet, but these members have no
+      // buffer to absorb a slip — they're the ones that WOULD cause it.
+      const zeroFloatCritical = members.filter(
+        (t) => t.isCriticalPath && (t.totalSlackDays == null || t.totalSlackDays <= 0)
+      );
+      rootCause = zeroFloatCritical.map((t) => ({
+        taskId: t.taskId,
+        taskName: t.taskNameEn || t.taskName,
+        reason: "Critical-path task with zero float — no buffer to absorb any slip.",
+      }));
+    }
+
+    const forecastRisk =
+      alreadyBehind.length === 0 ? forecastRiskFor(isCriticalPath, totalSlackDays) : undefined;
+
+    return {
+      milestoneId: milestone.milestoneId,
+      milestoneName: milestone.milestoneName,
+      plannedStart: milestone.plannedStart,
+      plannedEnd: milestone.plannedEnd,
+      isCriticalPath,
+      totalSlackDays,
+      forecastRisk,
+      rootCause,
+    };
+  });
+}
+
 export function buildScheduleNavigatorPayload(
   schedule: PlannedTask[],
   fusion: FusionOutput[],
   deviations: AsBuiltDeviation[],
-  metadata: ProjectMetadata
+  metadata: ProjectMetadata,
+  milestones: Milestone[] = []
 ): ScheduleNavigatorPayload {
-  const fusionBy = new Map(fusion.map((f) => [f.componentId, f]));
-  const deviationBy = new Map(deviations.map((d) => [d.componentId, d]));
+  // Keys normalized to string: real ingested PlannedTask.taskId values can
+  // come through as JS numbers (e.g. MSPDI UID attributes parse numeric)
+  // even though the schema types taskId/componentId as string — without
+  // this, a numeric taskId used as the componentId fallback silently misses
+  // every fusion/deviation lookup below (same class of bug already fixed in
+  // computeMilestoneAlerts).
+  const fusionBy = new Map(fusion.map((f) => [String(f.componentId), f]));
+  const deviationBy = new Map(deviations.map((d) => [String(d.componentId), d]));
 
   const notScheduledCount = fusion.filter((f) => f.deviationFlag === "not_scheduled").length;
 
@@ -325,7 +438,9 @@ export function buildScheduleNavigatorPayload(
     // componentId is absent for schedule-only projects with no BIM/spatial
     // layer — fall back to the task's own taskId so it still counts as one
     // unit of weight for the S-curve, instead of being silently dropped.
-    group.componentIds.add(task.componentId ?? task.taskId);
+    // String(...) so this matches the string-keyed fusionBy/deviationBy maps
+    // above even when the real taskId comes through as a JS number.
+    group.componentIds.add(String(task.componentId ?? task.taskId));
     group.isCriticalPath = group.isCriticalPath || Boolean(task.isCriticalPath);
     if (task.totalSlackDays != null) {
       group.totalSlackDays =
@@ -506,6 +621,8 @@ export function buildScheduleNavigatorPayload(
   const projectedEnd =
     projectedEnds[projectedEnds.length - 1] ?? metadata.overallTimeline.end;
 
+  const milestoneAlerts = computeMilestoneAlerts(milestones, schedule, deviationBy);
+
   return {
     projectId: metadata.projectId,
     projectName: metadata.projectName,
@@ -517,6 +634,7 @@ export function buildScheduleNavigatorPayload(
       hasActualData: hasAsBuiltData,
     },
     waypoints,
+    milestoneAlerts,
     notScheduled: {
       count: notScheduledCount,
       note: "Unscheduled BIM components (deviationFlag: not_scheduled). Shown as their own category — never folded into behind-schedule or 0% complete.",
@@ -540,6 +658,9 @@ export function buildScheduleNavigatorPayload(
       "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. catchUpPlan is generated only for waypoints with a severe (>7 day) delay, to keep the alternate-route overlay legible against real data's density of minor slips.",
       "milestone markers are FORGED: one per tracked milestoneClass (Structure/Framing/Envelope/Finishes), placed at that class's last waypoint by plannedEnd.",
       "forecastRisk is REAL/DERIVED wherever the source schedule provides isCriticalPath/totalSlackDays (MSPDI-sourced projects): a zero-float critical-path task is \"elevated\" risk, a task with 5 or fewer days of float is \"watch\", only ever set on waypoints with no already-realized delay (localDelayDays===0). Absent entirely for projects without real CPM float data (e.g. Schependomlaan).",
+      milestoneAlerts.length > 0
+        ? "milestoneAlerts is DERIVED from each project's own phase/summary schedule structure (e.g. MSPDI Engineering/Procurement/Civil Works/Installation/Commissioning), not the locked PredictedMilestoneClass vocabulary. rootCause never fabricates a human-language reason — it names the specific critical-path member task(s) already behind (as-built) or, pre-delay, the zero-float critical-path member(s) with no buffer to absorb a slip."
+        : "milestoneAlerts is empty: this project's source schedule has no phase/summary structure to derive milestones from (e.g. Schependomlaan).",
     ],
   };
 }

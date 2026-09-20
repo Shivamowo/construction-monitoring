@@ -158,15 +158,17 @@ export interface AsBuiltDeviation {
   /**
    * FORGED — comparison_all_weeks.xlsx lists missing elements per week
    * (Name/GUID/GlobalID columns) and does NOT provide per-component volumetric
-   * deviation percentages; values are synthesized in Phase 2.
+   * deviation percentages; values are synthesized in Phase 2. Absent for
+   * schedule-only projects with no point-cloud/BIM layer at all (a real
+   * schedule-derived deviation from Actual* dates has no volumetric basis).
    */
-  volumetricDeviationPct: number;
-  /** REAL — path/reference to the associated point-cloud file */
-  pointCloudRef: string;
-  /** FORGED — synthetic confidence score for the point-cloud match (0–1) */
-  pointCloudConfidence: number;
-  /** FORGED — 2D grid of deviation values per zone (synthetic heatmap) */
-  heatmapGrid: number[][];
+  volumetricDeviationPct?: number;
+  /** REAL — path/reference to the associated point-cloud file; absent for schedule-only projects. */
+  pointCloudRef?: string;
+  /** FORGED — synthetic confidence score for the point-cloud match (0–1); absent for schedule-only projects. */
+  pointCloudConfidence?: number;
+  /** FORGED — 2D grid of deviation values per zone (synthetic heatmap); absent for schedule-only projects. */
+  heatmapGrid?: number[][];
   /** Field-level provenance classification */
   _provenance?: Record<string, ProvenanceTag | string>;
 }
@@ -211,14 +213,18 @@ export interface FusionOutput {
   componentId?: string;
   /** DERIVED — aggregated completion % from Stream 2 task history (0–100) */
   completionPct: number;
-  /** FORGED — synthetic confidence-weighted fusion score (0–1) */
-  confidenceWeightedScore: number;
+  /**
+   * FORGED — synthetic confidence-weighted fusion score (0–1); absent for
+   * schedule-only projects where deviationFlag comes straight from real
+   * Actual* schedule dates (nothing to weight a confidence over).
+   */
+  confidenceWeightedScore?: number;
   /** DERIVED — schedule position relative to plan */
   deviationFlag: DeviationFlag;
-  /** FORGED — synthetic last-updated timestamp (ISO 8601 datetime) */
+  /** REAL/DERIVED — real Actual* date when computed from a source schedule; FORGED synthetic timestamp otherwise. */
   lastUpdated: string;
-  /** FORGED — synthetic human/process review status */
-  reviewStatus: ReviewStatus;
+  /** FORGED — synthetic human/process review status; absent for schedule-only projects. */
+  reviewStatus?: ReviewStatus;
   /** Field-level provenance classification */
   _provenance?: Record<string, ProvenanceTag | string>;
 }
@@ -243,6 +249,56 @@ export interface SafetyDetection {
   resolutionStatus: ResolutionStatus;
   /** Field-level provenance classification */
   _provenance?: Record<string, ProvenanceTag | string>;
+}
+
+/**
+ * A specific member task identified as the driver of a milestone's delay
+ * (or delay risk). DERIVED, never a narrative/human-language cause — there
+ * is no source field anywhere in current data for a human-written "why".
+ */
+export interface MilestoneRootCause {
+  /** REAL — the specific member task's own id, from Stream 2. */
+  taskId: string;
+  /** REAL — the specific member task's own name. */
+  taskName: string;
+  /**
+   * DERIVED — factual, structural statement of what is driving the delay:
+   * a critical-path task already behind its planned end (as-built known),
+   * or a critical-path task with zero float that has not slipped yet
+   * (forecast-only, nothing measured so far). Never a fabricated cause.
+   */
+  reason: string;
+}
+
+/**
+ * Stream 2 addendum: a project-specific checkpoint derived from the
+ * source schedule's own phase/summary structure (e.g. MSPDI Summary=1
+ * rows), NOT the locked PredictedMilestoneClass vocabulary. Populated only
+ * for schedule formats whose mapping-config declares a milestone
+ * extraction rule; absent (empty array) for projects without one, e.g.
+ * Schependomlaan.
+ */
+export interface Milestone {
+  /** REAL — id of the source schedule's own summary/phase task. */
+  milestoneId: string;
+  /** REAL — name of the source schedule's own summary/phase task. */
+  milestoneName: string;
+  /** REAL — the summary task's own rolled-up start, as computed by the source tool. */
+  plannedStart: string;
+  /** REAL — the summary task's own rolled-up end, as computed by the source tool. */
+  plannedEnd: string;
+  /** REAL — leaf PlannedTask.taskId values this milestone aggregates. */
+  memberTaskIds: string[];
+  /** DERIVED — true if ANY member task is on the critical path. */
+  isCriticalPath: boolean;
+  /** DERIVED — MIN totalSlackDays across member tasks; null if none carry slack data. */
+  totalSlackDays: number | null;
+  /**
+   * DERIVED — populated only when this milestone itself is at risk
+   * (isCriticalPath && totalSlackDays === 0) or already delayed (a member
+   * is behind per as-built data). Absent otherwise.
+   */
+  rootCause?: MilestoneRootCause[];
 }
 
 /** Overall project timeline derived from schedule extents. */
@@ -288,6 +344,36 @@ export interface ProjectMetadata {
   milestoneMappingTable: MilestoneMappingEntry[];
   /** Field-level provenance classification */
   _provenance?: Record<string, ProvenanceTag | string>;
+}
+
+/**
+ * SKELETON — recovery-plan shape. No real sample export from the external
+ * recovery-plan tool has been seen yet; every field below is a provisional
+ * best-guess placeholder, NOT a contract to build the real ingestion
+ * against. When a real sample lands: delete whatever guessed fields don't
+ * actually appear, add whatever real ones do, and only then wire this into
+ * the schedule (see shared/scripts/ingest-recovery-plan.ts). Do not extend
+ * `buildScheduleNavigatorPayload` or any UI to consume this until then.
+ */
+export interface RecoveryPlanRevisedTask {
+  /** Foreign key back to Stream 2 PlannedTask.taskId. */
+  taskId: string;
+  newPlannedStart: string;
+  newPlannedEnd: string;
+  newIsCriticalPath?: boolean;
+  newTotalSlackDays?: number | null;
+}
+
+/** SKELETON — see RecoveryPlanRevisedTask; not a finished contract. */
+export interface RecoveryPlan {
+  recoveryPlanId: string;
+  /** ISO 8601 datetime the recovery route was adopted/applied. */
+  appliedAt: string;
+  /** Reference/link back to the external recovery-plan tool's own record, if it provides one. */
+  sourceRef?: string;
+  revisedTasks: RecoveryPlanRevisedTask[];
+  /** Verbatim note from the recovery-plan tool, if it provides one — never fabricated. */
+  note?: string;
 }
 
 /** Convenience bundle of all streams for typed loaders (optional). */

@@ -26,5 +26,14 @@
     "projectName": { "path": "Project.Title" },
     "overallTimeline.start": { "path": "Project.StartDate", "type": "isoDatetime" },
     "overallTimeline.end": { "path": "Project.FinishDate", "type": "isoDatetime" }
+  },
+  "milestones": {
+    "summaryFlagField": "Summary",
+    "summaryFlagValue": "1",
+    "hierarchyField": "OutlineLevel",
+    "idField": "UID",
+    "nameField": "Name",
+    "startField": "Start",
+    "endField": "Finish"
   }
 }
