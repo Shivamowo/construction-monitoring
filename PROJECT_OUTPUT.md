@@ -731,3 +731,14 @@ Recovering Detailed Design's 5 days drops it out of the cascade entirely, so the
 Panel placement took two passes. Bottom-right covered the footer's projected-finish figure — the number the whole walkthrough builds to. Bottom-left then sat on top of the 3D route itself. It now parks in the right-hand column UNDER the legend, the one genuinely empty region of the page: same width as the legend, pinned above the scrubber, with tightened type and a max-height so it fits that gap rather than growing into either neighbour (and scrolls instead of spilling on short viewports).
 
 **Verified:** `tsc --noEmit` clean, zero page errors. Tour drives `/` → t0 → t1 → t2 → `/` with the right copy on each step and the panel gone at the end.
+
+---
+### 2026-09-21 (cont.) — Demo panel stops floating; EY pass over the remaining navigator chrome
+
+**The panel was clipping its own text.** It was `position: fixed` with `max-height: calc(100vh - 42rem)` — a guessed constant, and smaller than the space actually available, so Phase 2's copy scrolled inside a card with room to spare beneath it. Guessing at available space is the wrong shape of solution: the panel now renders as an ordinary flow element inside the navigator's side column, directly under the legend, and takes whatever height its content needs. No fixed positioning, no max-height, no clipping.
+
+That meant splitting the component: `DemoTourButton` stays in the header, `DemoTourPanel` lives in the side column. They share the same sessionStorage key and sync through a window event, which is enough for one number and avoids a provider.
+
+**EY pass over the chrome that predated the rebrand.** The filter toolbar was a frosted translucent capsule full of pill chips, and the legend a soft rounded card with a faint grey title — all pre-EY shape language sitting next to square black-and-yellow header controls. Toolbar and chips squared to 2px on a flat white surface; legend squared with a 3px black top rule and a black bold title, matching the phase cards on the index; line swatches squared from capsules to 1px so they read as rule segments; forecast tag and close button squared too.
+
+**Verified:** `tsc --noEmit` clean, zero page errors, tour driven end to end with all three steps' copy fully visible and unscrolled.

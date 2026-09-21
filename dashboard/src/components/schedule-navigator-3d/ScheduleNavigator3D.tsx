@@ -21,6 +21,7 @@ import {
   recoveryDaysForWaypoint,
 } from "./scene/pathFromWaypoints";
 import { NextUpBanner } from "./NextUpBanner";
+import { DemoTourPanel } from "@/components/DemoTour";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import {
   createJourneyController,
@@ -1107,6 +1108,7 @@ export function ScheduleNavigator3D() {
             </li>
           </ul>
         </div>
+        <DemoTourPanel />
       </aside>
       </div>
     </div>
