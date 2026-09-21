@@ -15,6 +15,8 @@ import {
   scrubIsoToFraction,
   type ScrubSnapshot,
 } from "@/lib/schedule-navigator/scrubSnapshot";
+import { buildNextUp } from "@/lib/schedule-navigator/nextUp";
+import { NextUpBanner } from "./NextUpBanner";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import {
   createJourneyController,
@@ -383,6 +385,15 @@ export function ScheduleNavigator3D() {
     [data]
   );
 
+  // Keyed off the scrub position, not today: dragging the playhead should
+  // read like moving along the route, with the banner updating to whatever
+  // is ahead of THAT point.
+  const nextUp = useMemo(() => {
+    if (!data) return [];
+    const iso = scrubIso ?? data.timeline.asOf ?? data.timeline.start;
+    return buildNextUp(data, iso);
+  }, [data, scrubIso]);
+
   const scrub: ScrubSnapshot | null = useMemo(() => {
     if (!data) return null;
     const iso = scrubIso ?? data.timeline.asOf ?? data.timeline.start;
@@ -562,6 +573,7 @@ export function ScheduleNavigator3D() {
               </svg>
             )}
           </button>
+          <NextUpBanner maneuvers={nextUp} />
           <div className={styles.filterOverlay} aria-label="Delay shard filters">
             <span className={styles.filterLabel}>Shards</span>
             <button type="button" className={!activeCategories.length ? `${styles.filterChip} ${styles.filterChipActive}` : styles.filterChip} aria-pressed={!activeCategories.length} onClick={() => setActiveCategories([])}>All</button>

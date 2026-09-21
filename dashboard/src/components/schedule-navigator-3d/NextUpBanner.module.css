@@ -1,0 +1,140 @@
+/* Satnav maneuver card. Sits over the viewport, top-centre-left, clear of
+   the shard filter chips on the left and the fullscreen button on the right. */
+.wrap {
+  position: absolute;
+  top: 3.4rem;
+  left: var(--space-3);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  max-width: min(24rem, calc(100% - 6rem));
+  pointer-events: none;
+  user-select: none;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 0 0.75rem;
+  padding: 0.7rem 1.1rem 0.7rem 0.85rem;
+  border-radius: 3px;
+  color: #ffffff;
+  /* Colour carries the kind; the glyph and text repeat it so the card is
+     not read by hue alone. */
+  background: #2f3a33;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+}
+
+.card.milestone {
+  background: #123d33;
+}
+
+.card.critical {
+  background: #7a2718;
+}
+
+.card.delay {
+  background: #8f3a12;
+}
+
+.card.risk {
+  background: #6b551a;
+}
+
+.card.finish {
+  background: #23303c;
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  grid-row: span 2;
+  opacity: 0.95;
+}
+
+.distance {
+  grid-row: span 2;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  opacity: 0.82;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The "Then …" strip tucks under the card, narrower and dimmer, exactly as
+   a satnav shows the follow-up maneuver. */
+.then {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.6rem;
+  padding: 0.35rem 0.8rem 0.4rem;
+  border-radius: 0 0 3px 3px;
+  background: rgba(30, 36, 32, 0.88);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.74rem;
+  max-width: 100%;
+}
+
+.thenWord {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  font-size: 0.66rem;
+}
+
+.thenGlyph {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+}
+
+.thenGlyph svg {
+  width: 14px;
+  height: 14px;
+}
+
+.thenLabel {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thenDistance {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

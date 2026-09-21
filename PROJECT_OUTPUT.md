@@ -679,3 +679,18 @@ Three changes requested after the t0/t1/t2 snapshots landed.
 **Known rough edge, not fixed:** the Engineering milestone spans 1–31 Oct, i.e. the far-left start of the route, and the default camera framing on t1 pushes it off-screen (t2 happens to frame it). The band is there and orbiting/zooming reveals it, but the headline delay visual is not visible on first paint of the phase where it matters most. Fixing it means retuning the intro camera framing, which is deliberately tuned and was not worth changing blind.
 
 **Also fixed:** a stale `.git/index.lock` was blocking all git operations; and `git add -A` was staging 35 files of pure CRLF↔LF churn (byte-identical content) alongside real work — those were restored to HEAD so commits stay reviewable. A `.gitattributes` with `* text=auto eol=lf` would stop the churn recurring across the two machines, but it triggers a one-time whole-repo renormalization, so it is left for the user to decide.
+
+---
+### 2026-09-21 — Phase dropdown + satnav-style "next up" maneuver card
+
+**Phase dropdown.** Switching phases meant returning to the index. A native `<select>` in the header jumps straight between them, preselected to the current `?project=`. Read from `window.location.search` in an effect rather than `useSearchParams`, which would force a Suspense boundary around everything `AppShell` wraps for a value only needed to preselect an option. Navigates by full location change on purpose — the 3D scene rebuilds from its payload on mount, so switching projects is a remount either way. The phase list moved to `dashboard/src/lib/projects.ts` so the index page and the dropdown share one definition; they were already two copies one commit after the index was written. Header restructured into a right-hand column (dropdown above nav) because `margin-left: auto` on the dropdown alone stranded the nav chips mid-row.
+
+**"Next up" maneuver card.** The 3D route shows the SHAPE of the schedule but not what is coming, which meant reading dates off the axis. New `lib/schedule-navigator/nextUp.ts` + `NextUpBanner` render a satnav maneuver card over the viewport: distance ("2 days"), what it is ("Detailed Design"), why it matters ("Running 6d late"), and a dimmer "Then …" strip for the one after.
+
+- Candidates are milestone completions (from `milestoneAlerts`), already-measured delays (`localDelayDays > 0`), zero-float critical-path tasks (`forecastRisk.riskLevel === "elevated"` — that IS forecastRiskFor's critical case), and remaining-float warnings (`"watch"`), plus the project finish. Each kind gets its own glyph and colour, and the detail text repeats the meaning so the card is never read by hue alone.
+- Keyed off the SCRUB position, not today, so dragging the playhead reads like moving along the route.
+- Several tasks can share a date; a satnav does not read all of them out, so one entry wins per date, ranked milestone > delay > critical > risk > finish.
+
+**Verified:** `tsc --noEmit` clean, zero page errors. `buildNextUp` probed at five dates across the timeline returns the right pair each time and an empty list past the finish (banner hides). In the browser, clicking the scrubber at 55% and 85% moved the card from "Detailed Design · running 6d late" to "Procurement · milestone completes" to "Protection & Control · critical path, no float". Dropdown preselects the current phase, switches the URL, and the payload follows (Phase 3 → 3 Feb 2027).
+
+**Note:** the stale `.git/index.lock` returned after the desktop bridge reconnected, and the earlier delete grant did not survive the reconnect — had to re-request it. Worth knowing it can recur rather than being a one-off.
