@@ -87,18 +87,35 @@ function waypointManeuver(waypoint: NavigatorWaypoint): Maneuver | null {
  */
 export function buildNextUp(
   payload: ScheduleNavigatorPayload,
-  fromIso: string
+  fromIso: string,
+  /**
+   * Per-waypoint schedule AFTER any alternate routes the user has taken —
+   * `{ id: { projectedEnd, residualLocal } }`, plus the project's own
+   * revised finish. Without this the card keeps describing the original
+   * route: taking a recovery changes the cascade inside the scene, and the
+   * payload it was built from never hears about it.
+   */
+  revised?: {
+    byWaypointId: Record<string, { projectedEnd: string; residualLocal: number }>;
+    projectedEnd: string;
+  }
 ): Maneuver[] {
   const fromMs = parseMs(fromIso);
 
+  const effective = payload.waypoints.map((w) => {
+    const r = revised?.byWaypointId[w.id];
+    if (!r) return w;
+    return { ...w, projectedEnd: r.projectedEnd, localDelayDays: r.residualLocal };
+  });
+
   const candidates: Maneuver[] = [
     ...(payload.milestoneAlerts ?? []).map(milestoneManeuver),
-    ...payload.waypoints
+    ...effective
       .map(waypointManeuver)
       .filter((m): m is Maneuver => m !== null),
   ];
 
-  const finishIso = payload.timeline.projectedEnd;
+  const finishIso = revised?.projectedEnd ?? payload.timeline.projectedEnd;
   if (finishIso) {
     candidates.push({
       kind: "finish",

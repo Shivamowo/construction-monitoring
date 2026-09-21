@@ -16,6 +16,10 @@ import {
   type ScrubSnapshot,
 } from "@/lib/schedule-navigator/scrubSnapshot";
 import { buildNextUp } from "@/lib/schedule-navigator/nextUp";
+import {
+  computeCascadedSchedule,
+  recoveryDaysForWaypoint,
+} from "./scene/pathFromWaypoints";
 import { NextUpBanner } from "./NextUpBanner";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import {
@@ -391,8 +395,31 @@ export function ScheduleNavigator3D() {
   const nextUp = useMemo(() => {
     if (!data) return [];
     const iso = scrubIso ?? data.timeline.asOf ?? data.timeline.start;
-    return buildNextUp(data, iso);
-  }, [data, scrubIso]);
+
+    // Rebuild the cascade from the routes actually taken, so the card
+    // describes the schedule the user is on rather than the one the payload
+    // shipped with. takenRoutes is already maintained on both commit and
+    // revert, so the recoveries map derives from it — no parallel state to
+    // drift.
+    const recoveries: Record<string, number> = {};
+    for (const w of data.waypoints) {
+      if (takenRoutes.has(w.id)) recoveries[w.id] = recoveryDaysForWaypoint(w);
+    }
+    const cascaded = computeCascadedSchedule(data.waypoints, recoveries);
+    const byWaypointId: Record<string, { projectedEnd: string; residualLocal: number }> = {};
+    data.waypoints.forEach((w, i) => {
+      byWaypointId[w.id] = {
+        projectedEnd: cascaded[i].projectedEnd,
+        residualLocal: cascaded[i].residualLocal,
+      };
+    });
+
+    return buildNextUp(data, iso, {
+      byWaypointId,
+      projectedEnd:
+        cascaded[cascaded.length - 1]?.projectedEnd ?? data.timeline.projectedEnd,
+    });
+  }, [data, scrubIso, takenRoutes]);
 
   const scrub: ScrubSnapshot | null = useMemo(() => {
     if (!data) return null;

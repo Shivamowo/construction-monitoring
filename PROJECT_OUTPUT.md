@@ -711,3 +711,23 @@ Asked to make the navigator's colours more pleasing and professional. Ran the da
 **28 stale colour references cleaned out of the chrome CSS** — sage `rgba(95,122,79)` from the pre-EY palette still highlighting filter chips, terracotta `rgba(196,90,50)`, steel-blue `rgba(36,48,65)`, warm shadows — plus 12 legend swatches and status text colours realigned to the new route hues, since a legend that does not track the scene is just wrong.
 
 **Verified:** `tsc --noEmit` clean, zero page errors on landing/t1/t2, all three re-screenshotted.
+
+---
+### 2026-09-21 (later still) — Demo walkthrough, and the next-up card was in fact stale after taking a route
+
+**The suspicion was right: the maneuver card did not update when you took a different path.** `buildNextUp` read from the payload React fetched, but committing an alternate route changes the cascade *inside* the scene controller (`appliedRecoveries` → `computeCascadedSchedule`), and nothing propagated that back. The card would keep announcing a delay the user had just recovered.
+
+Fixed without adding parallel state: `takenRoutes` was already maintained on both commit and revert, so the recoveries map derives from it, feeds `computeCascadedSchedule`, and `buildNextUp` now takes an optional revised schedule (`{byWaypointId: {projectedEnd, residualLocal}, projectedEnd}`) that overrides the payload's values. Proved end to end in a real browser by sweeping the canvas until the alternate route was selectable, then clicking "Take this route":
+
+| | card | projected finish |
+|---|---|---|
+| before | 2 days · Detailed Design · running 6d late | 10 Feb 2027 |
+| after | 7 days · Site Clearance · critical path, no float | 5 Feb 2027 |
+
+Recovering Detailed Design's 5 days drops it out of the cascade entirely, so the card correctly moves on to the next thing ahead.
+
+**Demo walkthrough.** A "Run demo" button in the header steps through the three phases with a narration panel: chapter, title, what this export is, and a highlighted "what to look at" pointing at the specific thing on screen (the red milestone sleeve, the grey recovery route, the finish date moving). Switching phase is a full navigation, so the tour's position lives in `sessionStorage` — it has to survive the load it causes — and `sessionStorage` rather than `local` so it dies with the tab and never greets someone unexpectedly. Blocked/private-mode storage is caught and simply means the tour never starts. Escape exits, as does an explicit Exit button; a demo that traps you is worse than no demo.
+
+Panel sits bottom-LEFT: bottom-right covered the footer's projected-finish figure, which is the number the whole walkthrough builds to, and obscured the legend behind it.
+
+**Verified:** `tsc --noEmit` clean, zero page errors. Tour drives `/` → t0 → t1 → t2 → `/` with the right copy on each step and the panel gone at the end.

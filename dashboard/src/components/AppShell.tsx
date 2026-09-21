@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { DemoTour } from "./DemoTour";
 import { PhaseSwitcher } from "./PhaseSwitcher";
 import styles from "./AppShell.module.css";
 
@@ -15,7 +16,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <h1 className={styles.brand}>Construction Monitor</h1>
         </a>
         <div className={styles.headerRight}>
-          <PhaseSwitcher />
+          <div className={styles.headerControls}>
+            <DemoTour />
+            <PhaseSwitcher />
+          </div>
           <nav className={styles.nav} aria-label="Dashboard views">
           {NAV.map((item) => (
             <a key={item.href} href={item.href} className={styles.navPrimary}>

@@ -1,0 +1,142 @@
+.trigger {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--paper-glow);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease;
+}
+
+.trigger:hover {
+  background: var(--brand-yellow);
+}
+
+/* Bottom-LEFT, lifted clear of the scrubber. Bottom-right covered the
+   footer's projected-finish figure, which is the number the whole
+   walkthrough builds to, and the legend behind it. Left-bottom is empty
+   scene; the maneuver card sits top-left, so the two never meet. */
+.panel {
+  position: fixed;
+  left: clamp(1rem, 2.5vw, 2rem);
+  bottom: 7.5rem;
+  z-index: 60;
+  width: min(25rem, calc(100vw - 2rem));
+  padding: 1.15rem 1.25rem 1.1rem;
+  background: var(--paper-glow);
+  border: 1px solid var(--grid-line);
+  border-top: 4px solid var(--brand-yellow);
+  border-radius: 2px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.progress {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+}
+
+.pip {
+  height: 3px;
+  flex: 1;
+  background: var(--slate);
+  border-radius: 1px;
+}
+
+.pipDone {
+  background: var(--slate-deep);
+}
+
+.pipOn {
+  background: var(--ink);
+}
+
+.chapter {
+  margin: 0 0 0.3rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slate-deep);
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.2rem;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.body {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.look {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.79rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--brand-yellow-bg);
+  border-left: 3px solid var(--brand-yellow-strong);
+}
+
+.lookLabel {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.primary,
+.secondary {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.5rem 1rem;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.primary {
+  color: var(--ink);
+  background: var(--brand-yellow);
+  border: 1px solid var(--brand-yellow-strong);
+}
+
+.primary:hover {
+  background: var(--brand-yellow-strong);
+}
+
+.secondary {
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--grid-line);
+}
+
+.secondary:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
