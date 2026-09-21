@@ -13,8 +13,10 @@ const brandFont = Archivo({
 });
 
 export const metadata: Metadata = {
-  title: "Schependomlaan — Schedule Navigator",
-  description: "Construction monitoring dashboard — Schedule Navigator centerpiece",
+  // Project-neutral: the navigator serves every onboarded project, so naming
+  // one of them in the tab title was wrong the moment there was a second.
+  title: "Schedule Navigator",
+  description: "Construction schedule monitoring — plan, delay and recovery on one route",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
