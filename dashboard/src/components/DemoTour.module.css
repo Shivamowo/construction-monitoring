@@ -18,17 +18,21 @@
   background: var(--brand-yellow);
 }
 
-/* Bottom-LEFT, lifted clear of the scrubber. Bottom-right covered the
-   footer's projected-finish figure, which is the number the whole
-   walkthrough builds to, and the legend behind it. Left-bottom is empty
-   scene; the maneuver card sits top-left, so the two never meet. */
+/* Parks in the right-hand column UNDER the legend — the one genuinely empty
+   region of the page, so the 3D viewport is never covered. Width matches the
+   legend column and it is pinned above the scrubber footer, which means it
+   has to FIT the gap between the two rather than grow into either: hence the
+   tighter type and the max-height, which scrolls on short viewports instead
+   of spilling over the footer. */
 .panel {
   position: fixed;
-  left: clamp(1rem, 2.5vw, 2rem);
+  right: clamp(1rem, 3.5vw, 3.5rem);
   bottom: 7.5rem;
   z-index: 60;
-  width: min(25rem, calc(100vw - 2rem));
-  padding: 1.15rem 1.25rem 1.1rem;
+  width: min(20.5rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 42rem);
+  overflow-y: auto;
+  padding: 0.9rem 1rem 0.85rem;
   background: var(--paper-glow);
   border: 1px solid var(--grid-line);
   border-top: 4px solid var(--brand-yellow);
@@ -39,7 +43,7 @@
 .progress {
   display: flex;
   gap: 0.3rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.6rem;
 }
 
 .pip {
@@ -67,27 +71,27 @@
 }
 
 .title {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.4rem;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   letter-spacing: -0.015em;
   line-height: 1.2;
   color: var(--ink);
 }
 
 .body {
-  margin: 0 0 0.75rem;
-  font-size: 0.85rem;
-  line-height: 1.55;
+  margin: 0 0 0.6rem;
+  font-size: 0.79rem;
+  line-height: 1.45;
   color: var(--ink-soft);
 }
 
 .look {
-  margin: 0 0 1rem;
-  padding: 0.6rem 0.7rem;
-  font-size: 0.79rem;
-  line-height: 1.5;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
   color: var(--ink);
   background: var(--brand-yellow-bg);
   border-left: 3px solid var(--brand-yellow-strong);
@@ -112,9 +116,9 @@
 .primary,
 .secondary {
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 700;
-  padding: 0.5rem 1rem;
+  padding: 0.42rem 0.85rem;
   border-radius: 2px;
   cursor: pointer;
   transition: background 0.18s ease, border-color 0.18s ease;
