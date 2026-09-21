@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PhaseSwitcher } from "./PhaseSwitcher";
 import styles from "./AppShell.module.css";
 
 const NAV = [
@@ -19,7 +20,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className={styles.eyebrow}>Project: 1</p>
           <h1 className={styles.brand}>Construction Monitor</h1>
         </a>
-        <nav className={styles.nav} aria-label="Dashboard views">
+        <div className={styles.headerRight}>
+          <PhaseSwitcher />
+          <nav className={styles.nav} aria-label="Dashboard views">
           {NAV.map((item) =>
             "soon" in item && item.soon ? (
               <span key={item.href} className={styles.navSoon} title="Coming in a later stage">
@@ -32,7 +35,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </a>
             )
           )}
-        </nav>
+          </nav>
+        </div>
       </header>
       <main className={styles.main}>{children}</main>
     </div>

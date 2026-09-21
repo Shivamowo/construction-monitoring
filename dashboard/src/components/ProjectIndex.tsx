@@ -1,3 +1,4 @@
+import { PHASES, SUPPORTING } from "@/lib/projects";
 import styles from "./ProjectIndex.module.css";
 
 /**
@@ -11,55 +12,6 @@ import styles from "./ProjectIndex.module.css";
  * onboarded projects, kept reachable but deliberately not competing with the
  * story above.
  */
-const PHASES = [
-  {
-    stage: "Phase 1",
-    project: "substation-t0",
-    title: "Plan as Issued",
-    statusDate: "1 Oct 2026",
-    blurb:
-      "The route before departure. Every task still ahead, critical path marked, nothing measured yet.",
-    facts: [
-      ["Status date", "Project start"],
-      ["Measured delay", "None — not started"],
-      ["Projected finish", "29 Jan 2027"],
-    ],
-  },
-  {
-    stage: "Phase 2",
-    project: "substation-t1",
-    title: "Status Update",
-    statusDate: "10 Nov 2026",
-    blurb:
-      "Six weeks in. Detailed Design finished 6 days late and took the critical path with it; the recovery route is drawn alongside, not yet taken.",
-    facts: [
-      ["Status date", "10 Nov 2026"],
-      ["Engineering milestone", "6 days behind"],
-      ["Projected finish", "10 Feb 2027"],
-    ],
-  },
-  {
-    stage: "Phase 3",
-    project: "substation-t2",
-    title: "Recovery Re-issue",
-    statusDate: "10 Nov 2026",
-    blurb:
-      "Same history — a recovery plan cannot rewrite what happened. The forward schedule is re-issued and the finish pulls back in.",
-    facts: [
-      ["Status date", "10 Nov 2026"],
-      ["Days recovered", "7"],
-      ["Projected finish", "3 Feb 2027"],
-    ],
-  },
-] as const;
-
-const SUPPORTING = [
-  { project: "schependomlaan", label: "Schependomlaan", note: "BIM + point-cloud source" },
-  { project: "mspdi-sample", label: "MSPDI Sample", note: "original baseline import" },
-  { project: "mspdi-demo", label: "MSPDI Demo", note: "superseded by Phase 2" },
-  { project: "mspdi-demo-recovered", label: "MSPDI Demo · Recovered", note: "superseded by Phase 3" },
-] as const;
-
 export function ProjectIndex() {
   return (
     <div className={styles.page}>
