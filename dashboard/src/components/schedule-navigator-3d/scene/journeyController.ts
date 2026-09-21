@@ -231,7 +231,7 @@ export function createJourneyController(
   renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xf7f0e5, 0.008);
+  scene.fog = new THREE.FogExp2(0xf4f5f7, 0.008);
 
   // Glass reflections for MeshPhysicalMaterial clearcoat — tuned for the light backdrop.
   // A neutral studio environment gives the tubes visible specular highlights that a flat
@@ -267,14 +267,14 @@ export function createJourneyController(
   controls.maxDistance = zoomBaseDistance * 1.9;
   controls.update();
 
-  scene.add(new THREE.AmbientLight(0xfff6ea, 0.42));
-  const key = new THREE.DirectionalLight(0xfff3e2, 1.55);
+  scene.add(new THREE.AmbientLight(0xf8fafc, 0.46));
+  const key = new THREE.DirectionalLight(0xfdfdfd, 1.25);
   key.position.set(10, 22, 11);
   scene.add(key);
   const kicker = new THREE.DirectionalLight(0xffffff, 0.65);
   kicker.position.set(-9, 16, 9);
   scene.add(kicker);
-  const fill = new THREE.DirectionalLight(0xf0e6d8, 0.5);
+  const fill = new THREE.DirectionalLight(0xe9edf2, 0.52);
   fill.position.set(-10, 6, -10);
   scene.add(fill);
 

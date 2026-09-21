@@ -88,7 +88,7 @@ export function createPlannedTube(
   );
   /* Matte warm-graphite planned path */
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#33302b"),
+    color: new THREE.Color("#3A4048"),
     metalness: 0,
     roughness: 0.9,
     transparent: true,
@@ -124,7 +124,7 @@ export function createActualTube(
 
   /* Light theme: rich teal, matte, shadow-based depth */
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#11433b"),
+    color: new THREE.Color("#00695B"),
     metalness: 0,
     roughness: 0.9,
   });
@@ -165,7 +165,7 @@ export function createOrUpdateProjectedTube(
 
   /* Light theme: saturated amber, matte translucency, shadow depth */
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#704c1f"),
+    color: new THREE.Color("#9A6614"),
     metalness: 0,
     roughness: 0.9,
     transparent: true,
@@ -208,13 +208,13 @@ export function createOrUpdateTakenRouteTube(
   }
 
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#0d3f81"),
+    color: new THREE.Color("#1E5794"),
     metalness: 0,
     roughness: 0.9,
     // Warm ambient/env light on a cream backdrop washes out cool blues under
     // physical shading — self-emission keeps the hue reading as saturated
     // confident blue instead of a pale periwinkle.
-    emissive: new THREE.Color("#0d3f81"),
+    emissive: new THREE.Color("#1E5794"),
     emissiveIntensity: 0.45,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -233,7 +233,7 @@ export function createProjectedDashLine(
   /* Light theme: muted amber dash */
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
   const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#704c1f"),
+    color: new THREE.Color("#9A6614"),
     dashSize: 0.45,
     gapSize: 0.3,
     transparent: true,
@@ -338,7 +338,7 @@ export function createRoutePreviewLine(
     false
   );
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#424c5b"),
+    color: new THREE.Color("#98A0A9"),
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -357,7 +357,7 @@ export function createGhostRouteLine(curve: THREE.CatmullRomCurve3): THREE.Line 
   const pts = curve.getPoints(80);
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
   const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#56524c"),
+    color: new THREE.Color("#AEB4BB"),
     dashSize: 0.4,
     gapSize: 0.35,
     transparent: true,
@@ -473,7 +473,7 @@ export function createTodayMarker(
   // Thin vertical needle (narrow in both plan dims — reads as a mark, not a box)
   const planeGeo = new THREE.BoxGeometry(0.02, 1.0, 0.02);
   const planeMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#2b2824"),
+    color: new THREE.Color("#2C313A"),
     metalness: 0,
     roughness: 0.35,
     transparent: true,
@@ -486,7 +486,7 @@ export function createTodayMarker(
   // Engraved crossbar near the top — like a surveyor's landmark finial
   const barGeo = new THREE.BoxGeometry(0.16, 0.05, 0.05);
   const barMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#8b9a6e"),
+    color: new THREE.Color("#8E6B22"),
     metalness: 0,
     roughness: 0.4,
   });
@@ -498,7 +498,7 @@ export function createTodayMarker(
   // Full-opacity ink for contrast against the cream floor (weight bumped for legibility).
   const ringGeo = new THREE.TorusGeometry(0.14, 0.022, 16, 64);
   const ringMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#2b2824"),
+    color: new THREE.Color("#2C313A"),
     metalness: 0,
     roughness: 0.35,
     transparent: true,
@@ -512,7 +512,7 @@ export function createTodayMarker(
   // (A broad flat annulus read as an unexplained circular glow on the carpet.)
   const dotGeo = new THREE.CircleGeometry(0.045, 32);
   const dotMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#2b2824"),
+    color: new THREE.Color("#2C313A"),
     transparent: true,
     opacity: 0.85,
     depthWrite: false,
@@ -556,7 +556,7 @@ export function createForecastShard(spec: {
   crystalGeo.scale(0.75, 1.35, 0.75);
 
   const crystalMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#c9843a"),
+    color: new THREE.Color("#9A6614"),
     wireframe: true,
     transparent: true,
     opacity: 0.95,
@@ -578,7 +578,7 @@ export function createForecastShard(spec: {
 
   const ringGeo = new THREE.RingGeometry(0.28, 0.33, 48);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#c9843a"),
+    color: new THREE.Color("#9A6614"),
     transparent: true,
     opacity: 0.3,
     side: THREE.DoubleSide,
@@ -721,8 +721,8 @@ export function createMilestoneDelayTube(points: THREE.Vector3[]): THREE.Mesh {
     false
   );
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#b43a2a"),
-    emissive: new THREE.Color("#5e1a12"),
+    color: new THREE.Color("#A63A30"),
+    emissive: new THREE.Color("#5A1A15"),
     emissiveIntensity: 0.35,
     metalness: 0,
     roughness: 0.55,
@@ -750,7 +750,7 @@ export function createCriticalPathAccentTube(
     false
   );
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#622a19"),
+    color: new THREE.Color("#8C2F26"),
     transparent: true,
     opacity: 0.85,
     depthWrite: false,
@@ -820,7 +820,7 @@ export function createClusterShard(cluster: ShardCluster): THREE.Group {
   crystalGeo.scale(0.75, 1.35, 0.75);
 
   const crystalMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#591013"),
+    color: new THREE.Color("#8E2A22"),
     metalness: 0,
     roughness: 0.9,
     emissive: new THREE.Color("#000000"),
@@ -834,7 +834,7 @@ export function createClusterShard(cluster: ShardCluster): THREE.Group {
 
   const ringGeo = new THREE.RingGeometry(0.26, 0.32, 48);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#591013"),
+    color: new THREE.Color("#8E2A22"),
     transparent: true,
     opacity: 0.38,
     side: THREE.DoubleSide,

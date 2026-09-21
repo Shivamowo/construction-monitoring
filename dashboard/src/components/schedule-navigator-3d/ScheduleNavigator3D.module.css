@@ -1,4 +1,6 @@
-/* Spacing: 4px base → 8px rhythm (space-2). Chrome shares navy with the scene. */
+/* Spacing: 4px base → 8px rhythm (space-2). Chrome and scene share one
+   neutral surface family; route hues are validated per the dataviz palette
+   checks (teal #00806b / ochre #c1811c / blue #2a6db8 / red #b3352e). */
 .root {
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -32,9 +34,10 @@
   --chrome-accent-bg-hover: rgba(255, 230, 0, 0.38);
   --chrome-accent-border: rgba(224, 196, 0, 0.6);
   --chrome-accent-border-strong: rgba(224, 196, 0, 0.9);
-  /* Route-preview line gray — distinct token from --chrome-accent (button/CTA
-     chrome) even though today's chrome-accent sage predates this palette. */
-  --route-alt: #424c5b;
+  /* Route-preview line grey. Deliberately desaturated and recessive — an
+     alternate you have not taken should read as an option, not a route, the
+     same convention Maps uses. */
+  --route-alt: #9ba3ac;
   --ease-ui: 0.28s cubic-bezier(0.33, 1, 0.68, 1);
   /* ≈ power2.out */
 
@@ -150,11 +153,11 @@
 }
 
 .statWarn {
-  color: #b43a2a;
+  color: #b3352e;
 }
 
 .statGood {
-  color: #11433b;
+  color: #00806b;
 }
 
 .statNeutral {
@@ -177,10 +180,10 @@
 }
 
 .scrubBarProjected {
-  border-color: rgba(196, 90, 50, 0.4);
+  border-color: rgba(193, 129, 28, 0.4);
   background: linear-gradient(165deg,
-      rgba(252, 246, 237, 0.92) 0%,
-      rgba(250, 244, 236, 0.92) 100%);
+      rgba(253, 250, 243, 0.94) 0%,
+      rgba(250, 248, 242, 0.94) 100%);
 }
 
 .filterBar {
@@ -208,8 +211,8 @@
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--chrome-border);
   border-radius: 999px;
-  background: rgba(255, 252, 246, 0.86);
-  box-shadow: 0 4px 14px rgba(90, 80, 70, 0.12);
+  background: rgba(252, 252, 251, 0.88);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
   backdrop-filter: blur(8px);
   color: var(--chrome-muted);
   font-size: 0.64rem;
@@ -246,9 +249,9 @@
 
 .filterChip:hover,
 .filterChipActive {
-  border-color: var(--chrome-accent);
-  background: rgba(95, 122, 79, 0.12);
-  color: var(--chrome-accent);
+  border-color: var(--chrome-accent-border-strong);
+  background: var(--chrome-accent-bg);
+  color: var(--chrome-accent-strong);
 }
 
 .filterDivider {
@@ -274,11 +277,11 @@
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #b43a2a;
-  border: 1px dashed rgba(196, 90, 50, 0.45);
+  color: #b3352e;
+  border: 1px dashed rgba(193, 129, 28, 0.45);
   border-radius: calc(var(--chrome-radius) - 4px);
   background: repeating-linear-gradient(90deg,
-      rgba(196, 90, 50, 0.08) 0 6px,
+      rgba(193, 129, 28, 0.08) 0 6px,
       transparent 6px 12px);
   max-height: 3rem;
   opacity: 1;
@@ -346,7 +349,7 @@
 }
 
 .scrubStatGridProjected .statWarn {
-  color: #b43a2a;
+  color: #b3352e;
   opacity: 0.92;
 }
 
@@ -487,15 +490,15 @@
   border-radius: 9999px;
   font-size: 0.68rem;
   font-weight: 600;
-  background: rgba(36, 48, 65, 0.06);
+  background: rgba(20, 20, 20, 0.06);
   color: var(--chrome-text);
   border: 1px solid var(--chrome-border);
 }
 
 .scrubberCurrentTagProjected {
-  background: rgba(196, 90, 50, 0.12);
-  color: #b43a2a;
-  border-color: rgba(196, 90, 50, 0.35);
+  background: rgba(193, 129, 28, 0.12);
+  color: #b3352e;
+  border-color: rgba(193, 129, 28, 0.35);
 }
 
 .scrubberTrackArea {
@@ -512,7 +515,7 @@
   width: 100%;
   height: 6px;
   border-radius: 3px;
-  background: rgba(36, 48, 65, 0.12);
+  background: rgba(20, 20, 20, 0.12);
   box-shadow: inset 0 1px 2px rgba(14, 20, 28, 0.12);
   overflow: visible;
 }
@@ -559,7 +562,7 @@
 
 .scrubberTickProjected {
   background: #c45a32;
-  box-shadow: 0 0 5px rgba(196, 90, 50, 0.7);
+  box-shadow: 0 0 5px rgba(193, 129, 28, 0.7);
   z-index: 2;
 }
 
@@ -593,7 +596,7 @@
   border-radius: 2px;
   transform: translate(-50%, -50%) rotate(45deg);
   background: transparent;
-  border: 1.5px solid #c9843a;
+  border: 1.5px solid #c1811c;
   box-shadow: 0 0 3px rgba(201, 132, 58, 0.5);
   cursor: pointer;
   z-index: 3;
@@ -602,7 +605,7 @@
 
 .scrubberForecastMark:hover {
   transform: translate(-50%, -50%) rotate(45deg) scale(1.4);
-  box-shadow: 0 0 8px #c9843a;
+  box-shadow: 0 0 8px #c1811c;
 }
 
 .scrubberThumb {
@@ -616,7 +619,7 @@
   border: 2px solid #ffffff;
   box-shadow:
     0 2px 6px rgba(14, 20, 28, 0.3),
-    0 0 8px rgba(36, 48, 65, 0.25);
+    0 0 8px rgba(20, 20, 20, 0.25);
   cursor: grab;
   z-index: 5;
   display: flex;
@@ -629,14 +632,14 @@
   cursor: grabbing;
   box-shadow:
     0 2px 8px rgba(14, 20, 28, 0.4),
-    0 0 12px rgba(36, 48, 65, 0.4);
+    0 0 12px rgba(20, 20, 20, 0.4);
 }
 
 .scrubberThumbProjected {
   border-color: #c45a32;
   box-shadow:
     0 2px 6px rgba(14, 20, 28, 0.3),
-    0 0 8px rgba(196, 90, 50, 0.35);
+    0 0 8px rgba(193, 129, 28, 0.35);
 }
 
 .scrubberThumbGrip {
@@ -652,7 +655,7 @@
   top: -8px;
   bottom: -8px;
   width: 1px;
-  background: rgba(36, 48, 65, 0.25);
+  background: rgba(20, 20, 20, 0.25);
   pointer-events: none;
 }
 
@@ -677,7 +680,7 @@
   background: var(--chrome-bg);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 12px 32px rgba(36, 48, 65, 0.22);
+    0 12px 32px rgba(20, 20, 20, 0.22);
   overflow-y: auto;
   color: var(--chrome-text);
   transition: opacity var(--ease-ui);
@@ -779,7 +782,7 @@
   padding: var(--space-3);
   border: 1.5px solid var(--chrome-accent-border-strong);
   background: var(--chrome-accent-bg);
-  box-shadow: 0 2px 8px rgba(95, 122, 79, 0.18);
+  box-shadow: 0 2px 8px rgba(224, 196, 0, 0.18);
   opacity: 1;
 }
 
@@ -860,7 +863,7 @@
   height: 0.3rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: #11433b;
+  background: #00806b;
 }
 
 .swatchPlanned {
@@ -868,7 +871,7 @@
   height: 0.3rem;
   border-radius: 999px;
   flex-shrink: 0;
-  background: #33302b;
+  background: #3a4048;
 }
 
 .swatchProjected {
@@ -877,7 +880,7 @@
   border-radius: 999px;
   flex-shrink: 0;
   background: repeating-linear-gradient(90deg,
-      #704c1f 0 5px,
+      #c1811c 0 5px,
       transparent 5px 9px);
   opacity: 0.9;
 }
@@ -923,7 +926,7 @@
   height: 0.3rem;
   border-radius: 1px;
   flex-shrink: 0;
-  background: #b43a2a;
+  background: #b3352e;
   opacity: 0.78;
 }
 
@@ -933,7 +936,7 @@
   border-radius: 2px;
   flex-shrink: 0;
   background: transparent;
-  border: 1.5px solid #c9843a;
+  border: 1.5px solid #c1811c;
   transform: rotate(15deg);
 }
 
@@ -975,7 +978,7 @@
   margin: var(--space-3) 0;
   padding: var(--space-2) var(--space-3);
   border-left: 2px solid var(--chrome-accent);
-  background: rgba(95, 122, 79, 0.1);
+  background: rgba(224, 196, 0, 0.1);
   color: var(--chrome-accent);
   font-size: 0.63rem;
   font-weight: 700;
@@ -995,7 +998,7 @@
 .recommendationNote {
   margin: var(--space-3) 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px dashed rgba(95, 122, 79, 0.55);
+  border: 1px dashed rgba(224, 196, 0, 0.55);
   color: var(--chrome-muted);
   font-size: 0.7rem;
   line-height: 1.35;
@@ -1020,7 +1023,7 @@
   margin-left: var(--space-2);
   padding: 0.06rem 0.4rem;
   border-radius: 999px;
-  border: 1px solid #c9843a;
+  border: 1px solid #c1811c;
   color: #a5651f;
   font-size: 0.62rem;
   font-weight: 700;
@@ -1036,11 +1039,13 @@
   border-radius: var(--chrome-radius);
   overflow: hidden;
   border: 1px solid var(--chrome-border);
+  /* Cool neutral studio backdrop. The previous version carried a stray red
+     radial and a cream midpoint, which cast the whole viewport warm and
+     fought the neutral chrome around it — and tinted the route hues. */
   background:
-    radial-gradient(900px 480px at 20% 0%, rgba(61, 90, 115, 0.12), transparent 55%),
-    radial-gradient(700px 420px at 90% 80%, rgba(180, 58, 42, 0.08), transparent 50%),
-    linear-gradient(165deg, #eef1f5 0%, #f5f2ea 48%, #e6e9ef 100%);
-  box-shadow: inset 0 0 0 1px rgba(36, 48, 65, 0.08);
+    radial-gradient(920px 500px at 20% 0%, rgba(30, 87, 148, 0.07), transparent 58%),
+    linear-gradient(165deg, #f1f4f8 0%, #fbfbfc 50%, #e8edf2 100%);
+  box-shadow: inset 0 0 0 1px rgba(20, 20, 20, 0.08);
   cursor: grab;
 }
 
@@ -1075,7 +1080,7 @@
   line-height: 1;
   cursor: pointer;
   backdrop-filter: blur(12px) saturate(1.15);
-  box-shadow: 0 2px 10px rgba(36, 48, 65, 0.14);
+  box-shadow: 0 2px 10px rgba(20, 20, 20, 0.14);
   transition:
     background var(--ease-ui),
     border-color var(--ease-ui),
@@ -1108,7 +1113,7 @@
   color: var(--chrome-text);
   cursor: pointer;
   backdrop-filter: blur(12px) saturate(1.15);
-  box-shadow: 0 2px 10px rgba(36, 48, 65, 0.14);
+  box-shadow: 0 2px 10px rgba(20, 20, 20, 0.14);
   transition:
     background var(--ease-ui),
     border-color var(--ease-ui),
@@ -1202,7 +1207,7 @@
   -webkit-backdrop-filter: blur(5px);
   border-radius: 4px;
   padding: 1px 5px;
-  box-shadow: 0 1px 3px rgba(36, 48, 65, 0.14);
+  box-shadow: 0 1px 3px rgba(20, 20, 20, 0.14);
   transition: color var(--ease-ui);
 }
 
@@ -1240,11 +1245,11 @@
 
 /* Color-coding per subject — matches each label's own line/marker color. */
 .axisKey[data-kind="plannedEnd"] {
-  color: #33302b;
+  color: #3a4048;
 }
 
 .axisKey[data-kind="projectedEnd"] {
-  color: #704c1f;
+  color: #c1811c;
 }
 
 .axisKey[data-kind="projectedEnd"][data-route-taken="true"] {
@@ -1385,7 +1390,7 @@
   width: min(14rem, 60vw);
   height: 2px;
   margin: 0 auto;
-  background: rgba(36, 48, 65, 0.15);
+  background: rgba(20, 20, 20, 0.15);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -1415,7 +1420,7 @@
   flex-direction: column;
   gap: var(--space-1);
   pointer-events: none;
-  color: rgba(36, 48, 65, 0.75);
+  color: rgba(20, 20, 20, 0.75);
   font-size: 0.74rem;
   z-index: 4;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
@@ -1504,7 +1509,7 @@
 }
 
 .closeBtn:hover {
-  background: rgba(36, 48, 65, 0.06);
+  background: rgba(20, 20, 20, 0.06);
   border-color: var(--chrome-border-strong);
   color: var(--chrome-text);
 }
@@ -1570,7 +1575,7 @@
   background: var(--chrome-accent-bg);
   color: var(--chrome-accent-strong);
   box-shadow:
-    0 2px 8px rgba(36, 48, 65, 0.1),
+    0 2px 8px rgba(20, 20, 20, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
   cursor: pointer;
   letter-spacing: -0.01em;
@@ -1589,7 +1594,7 @@
   color: var(--chrome-accent-strong);
   transform: scale(1.02);
   box-shadow:
-    0 4px 16px rgba(95, 122, 79, 0.22),
+    0 4px 16px rgba(224, 196, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
@@ -1657,7 +1662,7 @@
 }
 
 .clusterItem:hover {
-  background: rgba(36, 48, 65, 0.04);
+  background: rgba(20, 20, 20, 0.04);
   border-color: var(--chrome-border-strong);
   color: var(--chrome-text);
 }

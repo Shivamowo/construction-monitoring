@@ -694,3 +694,20 @@ Three changes requested after the t0/t1/t2 snapshots landed.
 **Verified:** `tsc --noEmit` clean, zero page errors. `buildNextUp` probed at five dates across the timeline returns the right pair each time and an empty list past the finish (banner hides). In the browser, clicking the scrubber at 55% and 85% moved the card from "Detailed Design · running 6d late" to "Procurement · milestone completes" to "Protection & Control · critical path, no float". Dropdown preselects the current phase, switches the URL, and the payload follows (Phase 3 → 3 Feb 2027).
 
 **Note:** the stale `.git/index.lock` returned after the desktop bridge reconnected, and the earlier delete grant did not survive the reconnect — had to re-request it. Worth knowing it can recur rather than being a one-off.
+
+---
+### 2026-09-21 (later) — Navigator colour pass, validated rather than eyeballed
+
+Asked to make the navigator's colours more pleasing and professional. Ran the dataviz skill's palette validator on what was there rather than going on taste, which turned an opinion into a measurable defect list.
+
+**The existing route palette failed 4 of 5 checks.** `#33302b` planned / `#11433b` actual / `#704c1f` projected / `#0d3f81` taken / `#424c5b` alternate: outside the lightness band, four of five below the chroma floor (reading gray), and — the real problem — planned↔actual separated by ΔE 3.7 under deuteranopia and 6.8 under normal vision, a hard fail. Two of the primary route lines were genuinely hard to tell apart.
+
+**New route identity set, all five checks passing:** teal `#00806B` (actual) / ochre `#C1811C` (projected) / blue `#2A6DB8` (taken) / red `#B3352E` (delay), worst adjacent CVD separation 11.7 protan, normal-vision 21.8.
+
+**Flat vs lit is a real distinction, learned the hard way.** Applying those validated values directly to the 3D tubes blew the projected line out to near-neon yellow: the validator scores FLAT marks on a surface, but these are `MeshStandardMaterial` tubes whose base colour is multiplied by scene lighting. Resolution: the 3D material bases sit ~2 steps darker in the same hue (`#00695B` / `#9A6614` / `#1E5794` / `#A63A30`) and the lighting lifts them back toward the validated values — which is exactly what the flat legend swatches show, so key and scene agree. Key light also eased 1.55→1.25. The planned reference stays a dark neutral graphite `#3A4048` on purpose: lightening it to satisfy the chroma floor made its separation from teal *worse* (ΔE 3.7), and as a thin always-present baseline it carries secondary encoding.
+
+**The warm/cool clash was the thing that actually read as dated.** The viewport was lit and painted warm cream (fog `0xf7f0e5`, ambient `0xfff6ea`, key `0xfff3e2`, fill `0xf0e6d8`) while the rebranded chrome around it is cool neutral white. Lighting and fog neutralised; the `.viewport` backdrop lost a stray red radial wash and a cream midpoint for a cool studio gradient.
+
+**28 stale colour references cleaned out of the chrome CSS** — sage `rgba(95,122,79)` from the pre-EY palette still highlighting filter chips, terracotta `rgba(196,90,50)`, steel-blue `rgba(36,48,65)`, warm shadows — plus 12 legend swatches and status text colours realigned to the new route hues, since a legend that does not track the scene is just wrong.
+
+**Verified:** `tsc --noEmit` clean, zero page errors on landing/t1/t2, all three re-screenshotted.
