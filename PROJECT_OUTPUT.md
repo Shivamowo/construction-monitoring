@@ -742,3 +742,18 @@ That meant splitting the component: `DemoTourButton` stays in the header, `DemoT
 **EY pass over the chrome that predated the rebrand.** The filter toolbar was a frosted translucent capsule full of pill chips, and the legend a soft rounded card with a faint grey title — all pre-EY shape language sitting next to square black-and-yellow header controls. Toolbar and chips squared to 2px on a flat white surface; legend squared with a 3px black top rule and a black bold title, matching the phase cards on the index; line swatches squared from capsules to 1px so they read as rule segments; forecast tag and close button squared too.
 
 **Verified:** `tsc --noEmit` clean, zero page errors, tour driven end to end with all three steps' copy fully visible and unscrolled.
+
+---
+### 2026-09-21 (cont.) — The pale streak in Phase 1 was the planned reference line
+
+User asked what the white line in Phase 1 was and what it was for. Fair question: it had no purpose there. Enumerated the live scene rather than guessing — Phase 1 contains one `planned` tube, one `projected`, and zero `alternate-route` objects (Phase 2 correctly has two), so nothing spurious was being drawn.
+
+**Two real defects behind it.**
+
+*It rendered near-white.* The planned tube was `opacity: 0.55` over a near-white scene, compositing to roughly rgb(144,148,152) before tone mapping and the room environment lifted it to about rgb(195,200,208). A line meant to read as recessive dark graphite instead read as a pale unexplained streak — visible enough to ask about, faint enough to look like an artifact. Now opaque at 0.9 and slightly darker (`#343A42`): still quieter than the live route, but legible as a deliberate line.
+
+*Its shape in Phase 1 was meaningless.* `plannedCurve` and `projectedCurve` are separately smoothed Catmull-Roms. Before anything slips they encode identical dates, so the only visible difference is the two curves' smoothing — a phantom sliver where the planned tube cut a corner the projected tube swung wide around. It looked like data and was not. The planned reference now renders only when `waypoints.some(w => w.localDelayDays > 0)`, i.e. once there is a real gap to point at, and the legend row is gated on the same flag so the key never advertises a line that is not on screen.
+
+This also improves the demo narrative: Phase 1 is now a single clean route, and the second line *appears* in Phase 2 with its meaning self-evident — the gap between planned and projected is the delay.
+
+**Verified:** `tsc --noEmit` clean, zero page errors. t0 legend has no "Planned reference" row and shows one route; t1 has the row and renders three visually distinct families — dark graphite planned, two light-grey alternates, orange projected.

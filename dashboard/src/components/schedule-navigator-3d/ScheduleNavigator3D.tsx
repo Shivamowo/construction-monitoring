@@ -422,6 +422,14 @@ export function ScheduleNavigator3D() {
     });
   }, [data, scrubIso, takenRoutes]);
 
+  // Mirrors journeyController: the planned reference line is only drawn once
+  // something has actually slipped, so the legend must not advertise it
+  // before then.
+  const hasMeasuredSlip = useMemo(
+    () => (data?.waypoints ?? []).some((w) => w.localDelayDays > 0),
+    [data]
+  );
+
   const scrub: ScrubSnapshot | null = useMemo(() => {
     if (!data) return null;
     const iso = scrubIso ?? data.timeline.asOf ?? data.timeline.start;
@@ -1067,9 +1075,11 @@ export function ScheduleNavigator3D() {
         <div className={styles.legendSection} ref={legendRef}>
           <p className={styles.legendTitle}>Legend</p>
           <ul className={styles.legendList}>
-            <li>
-              <i className={styles.swatchPlanned} /> Planned reference
-            </li>
+            {hasMeasuredSlip ? (
+              <li>
+                <i className={styles.swatchPlanned} /> Planned reference
+              </li>
+            ) : null}
             <li>
               <i className={styles.swatchActual} /> Actual to date
             </li>

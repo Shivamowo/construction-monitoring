@@ -284,6 +284,15 @@ export function createJourneyController(
   scene.add(root);
 
   const plannedMesh = createPlannedTube(model.plannedCurve);
+  /**
+   * The planned reference only means something once the projected route has
+   * left it — the gap between the two IS the delay. Before anything slips
+   * they encode identical dates, so the only thing visible is the two
+   * curves' differing smoothing: a phantom sliver that looks like data and
+   * isn't. Hidden until there is a real gap to point at.
+   */
+  const hasMeasuredSlip = model.waypoints.some((w) => w.localDelayDays > 0);
+  plannedMesh.visible = hasMeasuredSlip;
   root.add(plannedMesh);
 
   // No actual-to-date tube when the project has zero as-built tracking —

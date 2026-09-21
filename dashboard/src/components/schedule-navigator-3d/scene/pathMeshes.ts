@@ -86,13 +86,17 @@ export function createPlannedTube(
     TUBE_RADIAL,
     false
   );
-  /* Matte warm-graphite planned path */
+  /* Recessive graphite reference line. Was 55% opaque, which over a near-
+     white scene composited to roughly rgb(144,148,152) and then lifted
+     further by tone mapping — it read as a pale, unexplained streak rather
+     than the deliberate reference the legend promises. Opaque and a touch
+     darker: still quieter than the live route, but legible as a line. */
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#3A4048"),
+    color: new THREE.Color("#343A42"),
     metalness: 0,
-    roughness: 0.9,
+    roughness: 0.92,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.9,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
