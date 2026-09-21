@@ -73,27 +73,6 @@
   color: var(--ink);
 }
 
-.navSoon {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--slate-deep);
-  padding: 0.4rem 0.6rem;
-  border-radius: 2px;
-  border: 1px solid var(--grid-line);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.navSoon em {
-  font-style: normal;
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--steel-bright);
-}
-
 .main {
   flex: 1;
   padding: 1.25rem clamp(1rem, 2.5vw, 2.5rem) 2.5rem;
