@@ -2081,7 +2081,7 @@
       <NextAvailableSprintOrderingID>0</NextAvailableSprintOrderingID>
       <PredecessorLink>
         <PredecessorUID>14</PredecessorUID>
-        <Type>0</Type>
+        <Type>1</Type>
         <CrossProject>0</CrossProject>
         <LinkLag>24000</LinkLag>
         <LagFormat>7</LagFormat>

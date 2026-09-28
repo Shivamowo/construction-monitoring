@@ -35,7 +35,7 @@ export const PHASES: readonly PhaseEntry[] = [
     facts: [
       ["Status date", "10 Nov 2026"],
       ["Engineering milestone", "6 days behind"],
-      ["Projected finish", "29 Jan 2027"],
+      ["Projected finish", "4 Feb 2027"],
     ],
   },
   {
@@ -46,8 +46,8 @@ export const PHASES: readonly PhaseEntry[] = [
       "Same history — a recovery plan cannot rewrite what happened. The forward schedule is re-issued and the finish pulls back in.",
     facts: [
       ["Status date", "10 Nov 2026"],
-      ["Days recovered", "7"],
-      ["Projected finish", "22 Jan 2027"],
+      ["Days recovered", "8"],
+      ["Projected finish", "27 Jan 2027"],
     ],
   },
 ] as const;

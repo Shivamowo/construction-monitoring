@@ -65,8 +65,8 @@ the troubleshooting table at the bottom.
 | URL | What you should see |
 |---|---|
 | `localhost:3001/?project=substation-t0` | One clean orange route. Projected finish **29 Jan 2027**. No delay markers. |
-| `localhost:3001/?project=substation-t1` | Green actual + amber projected + graphite planned + two grey alternates. Finish **29 Jan 2027** (CPM re-level — see PROJECT_OUTPUT.md 28 Sep 2026; was 10 Feb under the old additive cascade). |
-| `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **22 Jan 2027** (was 3 Feb under the old additive cascade). |
+| `localhost:3001/?project=substation-t1` | Green actual + amber projected + graphite planned + two grey alternates. Finish **4 Feb 2027**. |
+| `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **27 Jan 2027**. |
 
 There is also a **Run demo** button in the header that walks all three phases with
 narration. Fastest way to understand the product.
@@ -145,8 +145,8 @@ the *same* project at three dates:
 | Project | Status date | What it represents |
 |---|---|---|
 | `substation-t0` | 1 Oct 2026 | Plan as issued. No actuals at all. |
-| `substation-t1` | 10 Nov 2026 | Same plan + real actuals. Detailed Design finished 6d late on the critical path. 12-day cascade. |
-| `substation-t2` | 10 Nov 2026 | Identical history, forward plan re-baselined. Recovers 7 days. |
+| `substation-t1` | 10 Nov 2026 | Same plan + real actuals. Detailed Design finished 6d late on the critical path; it drives the finish 6 days late (CPM). |
+| `substation-t2` | 10 Nov 2026 | Identical history, forward plan re-baselined. Recovers 8 days vs t1. |
 
 `mspdi-sample`, `mspdi-demo`, `mspdi-demo-recovered` are earlier iterations, superseded
 by the trio above but left in place and still working.
@@ -190,11 +190,12 @@ If you add a field, tag it. If you compute something, say so.
 
 Honest list. None of these are hidden bugs — they are documented decisions.
 
-1. **The cascade is now a CPM forward pass** (`dashboard/src/lib/schedule-navigator/cpm.ts`,
-   28 Sep 2026). It honours the source schedule's FS/SS/FF/SF links and lags. Open issue:
-   the authored substation plan's FF+5 link from Transformer Erection to Protection &
-   Control leaves ~10 days of float the file's own TotalSlack=0 says isn't there, so
-   t1's slip is absorbed before the finish. See `PROJECT_OUTPUT.md` for the numbers.
+1. ~~The cascade is additive, not a real CPM re-level.~~ Fixed 28 Sep 2026: projected
+   dates come from a forward pass over the schedule's own FS/SS/FF/SF links
+   (`dashboard/src/lib/schedule-navigator/cpm.ts`), verified by hand-trace on t1. Projects
+   with no predecessor links (Schependomlaan) get no propagation at all, by design.
+   Caveat: `_make-substation-snapshots.py` regenerates from `mspdi-sample`, which still
+   has the Erection → P&C link as FF+5; re-running it would revert the FS+5 fix below.
 2. **Recovery plans are self-authored.** The external tool meant to supply them has no
    export format yet. `shared/scripts/ingest-recovery-plan.ts` has an `--inspect` mode
    ready to receive a real sample and is deliberately left inert until one exists.

@@ -41,7 +41,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     body:
       "A third export, same status date. The history is byte-identical — a recovery plan cannot rewrite what already happened. What changed is the forward plan: Site Clearance compressed, Cable Trenches overlapped with Foundations, and everything after it pulled in.",
     look:
-      "Projected finish moves from 29 Jan 2027 to 22 Jan 2027 — seven days recovered. The superseded route stays drawn in grey above the one now taken.",
+      "Projected finish moves from 4 Feb 2027 to 27 Jan 2027 — eight days recovered. The superseded route stays drawn in grey above the one now taken.",
   },
 ] as const;
 

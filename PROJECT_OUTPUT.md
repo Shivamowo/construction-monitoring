@@ -798,3 +798,32 @@ Layout: the side column now has `contain: size; overflow-y: auto` so the scene s
 **Verified:** `npx tsc --noEmit` clean. ESLint on touched files reports the same 8 findings as before (1 pre-existing `set-state-in-effect` error at ScheduleNavigator3D.tsx:340, 7 warnings); none new. Headless Chrome, fresh load, camera untouched: t1 at 1600×1000 shows START (1 Oct) through PLANNED END (29 Jan) in frame with the red Engineering band over the route start visible. t0 shows no panel. Clicking the Engineering row flies to and frames the red band. t0/t1/t2/Schependomlaan have zero page or console errors. At 420px wide the column stacks below the scene at full height.
 
 **Deliberately NOT done:** the 3D band isn't highlighted when its row is selected (not asked for). At phone width the % axis labels on the far left sit close to the edge because the portrait aspect limits the fit. Task D (`ingest-recovery-plan.ts`, Stage 4) untouched, as instructed.
+
+---
+### 2026-09-28 (cont.) — Engine verified by trace; Erection → P&C corrected to FS+5; demo numbers re-derived
+
+**Engine verdict: correct.** The suspicion was that a 6-day Detailed Design slip not moving the finish was an engine bug (lag dropped, or first predecessor taken instead of the max). Traced every t1 waypoint before any data change. Transformer Erection has two predecessors: Foundations FS+10 (projected finish 11 Dec → 21 Dec) and Transformer Delivery FS+0 (15 Dec). The engine takes the max, 21 Dec, so both the lag and the max are applied. Erection projects 21 Dec → 5 Jan. One difference from the expected trace: Transformer Delivery does not inherit ~2 days. It hangs off Transformer Order, which has an as-built record (finished on time, 21 Oct), and a measured finish is not re-computed, so Detailed Design's late start never reaches Delivery. The finish held at 29 Jan only because of the FF+5 link from Erection into Protection & Control: under finish-to-finish, P&C only had to finish by 10 Jan against a planned 14 Jan.
+
+**Data fix (construction logic).** `Transformer Erection → Protection & Control` changed from FF+5 to FS+5 in `substation-t0/t1/t2/raw/mspdi.xml`, and all three were rebuilt with `build-project.ts`. Protection and control gear can't be commissioned before the transformer is physically erected, so finish-to-finish (the two running concurrently and ending 5 days apart) is wrong for this pair; finish-to-start + 5 is right. It also matches the file's own dates (P&C planned start 4 Jan = Erection finish 30 Dec + 5) and its own TotalSlack=0 on both tasks. One-line diff per file; line endings untouched. `mspdi-sample` (the generator's base) was not changed; see HANDOFF caveat.
+
+**True figures, new engine (t1 table: planned → projected end):**
+
+| Waypoint | Planned end | t1 projected | t1 + DD route |
+|---|---|---|---|
+| Detailed Design | 31 Oct | 6 Nov | 1 Nov |
+| Site Clearance | 10 Nov | 16 Nov | 11 Nov |
+| Foundations | 5 Dec | 11 Dec | 6 Dec |
+| Transformer Erection | 30 Dec | 5 Jan | 31 Dec |
+| Protection & Control | 14 Jan | 20 Jan | 15 Jan |
+| Pre-commissioning | 24 Jan | 30 Jan | 25 Jan |
+| Energisation | 29 Jan | **4 Feb** | **30 Jan** |
+
+- t0 projected finish: **29 Jan 2027** (= planned).
+- t1 projected finish: **4 Feb 2027**, 6 days late (was stated as 10 Feb / 12-day cascade).
+- Taking the Detailed Design route on t1: **30 Jan 2027**, **5 days recovered**.
+- t2 projected finish: **27 Jan 2027**, **8 days recovered** vs t1 (was stated as 3 Feb / 7 days). Applying `recovery-plan.json` revisions to t1 through the engine also gives 27 Jan, so acceptance #2 now holds. Note that t2's re-issue *states* 22 Jan: its authored P&C start (28 Dec) ignores the 5-day lag after Erection's revised 28 Dec finish, so the engine pushes P&C to 2 Jan and the finish to 27 Jan. That's the re-issue being internally inconsistent, not the engine. Left as is.
+- **Driving constraint:** Detailed Design's measured 6-day slip → Site Clearance → Foundations → Transformer Erection (via Foundations FS+10, which beats Transformer Delivery by 6 days) → Protection & Control (FS+5) → Pre-commissioning → Energisation. Design Basis Report's 2 days is already inside Detailed Design's measured finish. Design Review's 4 days has 5 days of float and no successors, so it propagates nowhere. The old 12 = 2 + 6 + 4 was double-counting both.
+
+Stale figures updated: start page (`lib/projects.ts`: t1 4 Feb, t2 27 Jan, 8 days recovered), demo tour (`lib/demoTour.ts`: 4 Feb → 27 Jan, eight days), HANDOFF tables and limitation #1. The external slide deck (not in this repo) still says 12-day cascade / 7 days / 10 Feb → 3 Feb and needs the numbers above.
+
+**Verified:** API payloads checked directly (t0 29 Jan, t1 4 Feb, t2 27 Jan). DD-route and recovery-plan figures come from running the shipped `cpm.ts` against the rebuilt t1 payload. `tsc --noEmit` clean. Task D untouched.
