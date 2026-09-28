@@ -6,6 +6,7 @@ import type {
   DelayCategory,
   DelaySeverity,
   NavigatorWaypoint,
+  RecoveryOffer,
   ScheduleNavigatorPayload,
 } from "@/lib/schedule-navigator/aggregate";
 import {
@@ -16,11 +17,13 @@ import {
   type ScrubSnapshot,
 } from "@/lib/schedule-navigator/scrubSnapshot";
 import { buildNextUp } from "@/lib/schedule-navigator/nextUp";
-import { recoveryDaysForWaypoint } from "./scene/pathFromWaypoints";
+import { computeProjectedSchedule, projectedFinish } from "@/lib/schedule-navigator/cpm";
 import {
-  computeProjectedSchedule,
-  projectedFinish,
-} from "@/lib/schedule-navigator/cpm";
+  availableOffers,
+  milestoneProjections,
+  routeEffects,
+  routeOffers,
+} from "@/lib/schedule-navigator/routes";
 import { NextUpBanner } from "./NextUpBanner";
 import { DemoTourPanel } from "@/components/DemoTour";
 import { MilestoneAlertsPanel } from "./MilestoneAlertsPanel";
@@ -45,11 +48,10 @@ function severityRank(s: NavigatorWaypoint["severity"]): number {
   return s === "severe" ? 2 : s === "mild" ? 1 : 0;
 }
 
-function routeScore(waypoint: NavigatorWaypoint): number {
-  const plan = waypoint.catchUpPlan;
-  if (!plan || plan.daysRecovered <= 0) return -Infinity;
-  const costBurden = Math.max(1, plan.resourceCost.split(",").length + plan.resourceCost.length / 100);
-  return plan.daysRecovered / costBurden;
+function routeScore(offer: RecoveryOffer): number {
+  if (offer.daysRecovered <= 0) return -Infinity;
+  const costBurden = Math.max(1, offer.resourceCost.split(",").length + offer.resourceCost.length / 100);
+  return offer.daysRecovered / costBurden;
 }
 
 const FLOATING_CARD_WIDTH = 300;
@@ -94,10 +96,11 @@ export function ScheduleNavigator3D() {
   const [data, setData] = useState<ScheduleNavigatorPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NavigatorWaypoint | null>(null);
-  const [selectedRoute, setSelectedRoute] = useState<NavigatorWaypoint | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<RecoveryOffer | null>(null);
   const [clusterItems, setClusterItems] = useState<NavigatorWaypoint[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
-  const [takenRoutes, setTakenRoutes] = useState<Set<string>>(new Set());
+  /** Chain of route (offer) ids taken, in commit order — mirrored from the controller. */
+  const [takenRoutes, setTakenRoutes] = useState<string[]>([]);
   const [shardTotal, setShardTotal] = useState(0);
   const [clusterTotal, setClusterTotal] = useState(0);
   const [status, setStatus] = useState("Loading schedule…");
@@ -179,6 +182,7 @@ export function ScheduleNavigator3D() {
         waypoints: data.waypoints,
         timeline: data.timeline,
         milestoneAlerts: data.milestoneAlerts,
+        offers: routeOffers(data),
         axisOverlay: axisOverlayRef.current,
         axisClassNames: {
           month: styles.axisMonth,
@@ -204,10 +208,10 @@ export function ScheduleNavigator3D() {
           setRecoveryOpen(false);
           setStatus("Predicted risk detail open");
         },
-        onRouteSelect: (waypoint) => {
+        onRouteSelect: (offer) => {
           setClusterItems([]);
           setSelected(null);
-          setSelectedRoute(waypoint);
+          setSelectedRoute(offer);
           setRecoveryOpen(false);
           setStatus("Alternate route detail open");
         },
@@ -217,26 +221,19 @@ export function ScheduleNavigator3D() {
           setStatus("Drag the playhead or click a date · orbit to inspect");
           controller.setHoverEnabled(true);
         },
-        onCatchUpComplete: ({
-          daysRecovered,
-          daysLost,
-          appliedCount,
-          projectedEnd,
-          daysBehind,
-        }) => {
+        onRouteTaken: ({ projectedEnd, daysBehind, takenOfferIds, revealedOfferIds }) => {
           setProjectedEndIso(projectedEnd);
-          if (daysRecovered <= 0) {
-            setStatus("No catch-up plan on this delay — projected path unchanged");
-            return;
-          }
-          const ratio = daysLost > 0 ? Math.round((daysRecovered / daysLost) * 100) : 0;
+          setTakenRoutes(takenOfferIds);
           setStatus(
-            `Catch-up applied: recovered ${daysRecovered} of ${daysLost}d (~${ratio}% of local gap). Projected finish moved to ${formatDay(projectedEnd)} (+${daysBehind}d). ${appliedCount} plan${appliedCount === 1 ? "" : "s"} active.`
+            `Route taken (${takenOfferIds.length} in chain). Projected finish ${formatDay(projectedEnd)} (+${daysBehind}d).` +
+              (revealedOfferIds.length
+                ? ` ${revealedOfferIds.length} further route${revealedOfferIds.length === 1 ? "" : "s"} now on offer.`
+                : "")
           );
         },
-        onRevert: ({ historyIndex, projectedEnd, daysBehind, appliedWaypointIds }) => {
+        onRevert: ({ historyIndex, projectedEnd, daysBehind, takenOfferIds }) => {
           setProjectedEndIso(projectedEnd);
-          setTakenRoutes(new Set(appliedWaypointIds));
+          setTakenRoutes(takenOfferIds);
           setSelectedRoute(null);
           setRecoveryOpen(false);
           setStatus(
@@ -383,13 +380,19 @@ export function ScheduleNavigator3D() {
   useEffect(() => {
   }, [scrubIso]);
 
+  const offers = useMemo(() => (data ? routeOffers(data) : []), [data]);
+  const offersOnOffer = useMemo(() => availableOffers(offers, takenRoutes), [offers, takenRoutes]);
+  const routeEffectsNow = useMemo(() => routeEffects(offers, takenRoutes), [offers, takenRoutes]);
+
   const recommendedRoute = useMemo(
-    () => data
-      ? data.waypoints
-          .filter((waypoint) => waypoint.catchUpPlan && waypoint.catchUpPlan.daysRecovered > 0)
-          .sort((a, b) => routeScore(b) - routeScore(a))[0] ?? null
-      : null,
-    [data]
+    () => [...offersOnOffer].sort((a, b) => routeScore(b) - routeScore(a))[0] ?? null,
+    [offersOnOffer]
+  );
+
+  // DERIVED — each milestone's projected completion on the route taken.
+  const milestoneProjection = useMemo(
+    () => (data ? milestoneProjections(data.milestoneAlerts, data.waypoints, routeEffectsNow) : {}),
+    [data, routeEffectsNow]
   );
 
   // Keyed off the scrub position, not today: dragging the playhead should
@@ -404,11 +407,7 @@ export function ScheduleNavigator3D() {
     // shipped with. takenRoutes is already maintained on both commit and
     // revert, so the recoveries map derives from it — no parallel state to
     // drift.
-    const recoveries: Record<string, number> = {};
-    for (const w of data.waypoints) {
-      if (takenRoutes.has(w.id)) recoveries[w.id] = recoveryDaysForWaypoint(w);
-    }
-    const cascaded = computeProjectedSchedule(data.waypoints, recoveries);
+    const cascaded = computeProjectedSchedule(data.waypoints, routeEffectsNow);
     const byWaypointId: Record<string, { projectedEnd: string; residualLocal: number }> = {};
     data.waypoints.forEach((w, i) => {
       byWaypointId[w.id] = {
@@ -421,8 +420,9 @@ export function ScheduleNavigator3D() {
       byWaypointId,
       projectedEnd:
         projectedFinish(data.waypoints, cascaded).projectedEnd || data.timeline.projectedEnd,
+      milestones: milestoneProjection,
     });
-  }, [data, scrubIso, takenRoutes]);
+  }, [data, scrubIso, routeEffectsNow, milestoneProjection]);
 
   // Mirrors journeyController: the planned reference line is only drawn once
   // something has actually slipped, so the legend must not advertise it
@@ -505,18 +505,10 @@ export function ScheduleNavigator3D() {
   };
 
   const onTakeRoute = () => {
-    if (!selectedRoute?.catchUpPlan) return;
+    if (!selectedRoute) return;
     setRecoveryOpen(true);
-    const { daysRecovered, daysLost } = selectedRoute.catchUpPlan;
-    setStatus(
-      `Route taken: recovering ${daysRecovered} of ${daysLost} days at ${selectedRoute.taskNameEn}…`
-    );
-    controllerRef.current?.applyCatchUpPlan(selectedRoute.id);
-    setTakenRoutes((prev) => {
-      const next = new Set(prev);
-      next.add(selectedRoute.id);
-      return next;
-    });
+    setStatus(`Taking route: ${selectedRoute.taskName}…`);
+    controllerRef.current?.takeRoute(selectedRoute.id);
   };
 
   if (error) {
@@ -550,9 +542,9 @@ export function ScheduleNavigator3D() {
   const isCluster = clusterItems.length > 1;
   const isForecast = Boolean(selected?.forecastRisk);
   const hasCatchUp = Boolean(
-    selected?.catchUpPlan && selected.catchUpPlan.daysRecovered > 0
+    selected && offersOnOffer.some((o) => o.waypointId === selected.id)
   );
-  const routeTaken = Boolean(selectedRoute && takenRoutes.has(selectedRoute.id));
+  const routeTaken = Boolean(selectedRoute && takenRoutes.includes(selectedRoute.id));
 
   const toggleCategory = (category: DelayCategory) => {
     setActiveCategories((current) =>
@@ -874,7 +866,8 @@ export function ScheduleNavigator3D() {
                 <div>
                   <h3 className={styles.cardTitle}>Alternate route</h3>
                   <p className={styles.cardMeta}>
-                    {selectedRoute.milestoneClass} · {selectedRoute.taskNameEn}
+                    {selectedRoute.depth > 1 ? `Level ${selectedRoute.depth} · ` : ""}
+                    {selectedRoute.taskName}
                   </p>
                 </div>
                 <button
@@ -893,17 +886,17 @@ export function ScheduleNavigator3D() {
                 <div className={styles.recommendationBadge}>
                   Computed suggestion · DERIVED
                   <span>
-                    Recommended: recovers {selectedRoute.catchUpPlan?.daysRecovered}d at the lowest computed cost burden.
+                    Recommended: recovers {selectedRoute.daysRecovered}d at the lowest computed cost burden.
                   </span>
                 </div>
               )}
               {recommendedRoute && recommendedRoute.id !== selectedRoute.id && (
                 <div className={styles.recommendationNote}>
-                  Computed suggestion · DERIVED: <strong>{recommendedRoute.taskNameEn}</strong> recovers {recommendedRoute.catchUpPlan?.daysRecovered}d with the strongest recovery-to-cost score.
+                  Computed suggestion · DERIVED: <strong>{recommendedRoute.taskName}</strong> recovers {recommendedRoute.daysRecovered}d with the strongest recovery-to-cost score.
                 </div>
               )}
 
-              {selectedRoute.catchUpPlan && (
+              {(
                 <>
                   <div className={styles.routeCompare}>
                     <div className={styles.routeOption}>
@@ -918,8 +911,8 @@ export function ScheduleNavigator3D() {
                         {routeTaken ? "Route taken" : "Suggested route"}
                       </p>
                       <p className={styles.routeOptionMeta}>
-                        −{selectedRoute.catchUpPlan.daysRecovered}d ·{" "}
-                        {selectedRoute.catchUpPlan.resourceCost}
+                        −{selectedRoute.daysRecovered}d ·{" "}
+                        {selectedRoute.resourceCost}
                       </p>
                     </div>
                   </div>
@@ -933,7 +926,7 @@ export function ScheduleNavigator3D() {
                     >
                       {routeTaken
                         ? "Route taken ✓"
-                        : `Take this route (−${selectedRoute.catchUpPlan.daysRecovered}d)`}
+                        : `Take this route (−${selectedRoute.daysRecovered}d)`}
                     </button>
                   </div>
 
@@ -941,19 +934,9 @@ export function ScheduleNavigator3D() {
                     <div className={styles.recovery}>
                       <p className={styles.fieldLabel}>
                         Recovery
-                        <ProvenanceBadge tag="FORGED" compact />
+                        <ProvenanceBadge tag={selectedRoute.provenance} compact />
                       </p>
-                      <p>{selectedRoute.catchUpPlan.summary}</p>
-                      <p className={styles.placeholderNote}>
-                        Partial correction only: {selectedRoute.catchUpPlan.daysRecovered} of{" "}
-                        {selectedRoute.catchUpPlan.daysLost} days recovered (
-                        {Math.round(
-                          (selectedRoute.catchUpPlan.daysRecovered /
-                            Math.max(selectedRoute.catchUpPlan.daysLost, 1)) *
-                            100
-                        )}
-                        % of this local gap). Other delays keep their own residual.
-                      </p>
+                      <p>{selectedRoute.summary}</p>
                     </div>
                   )}
                 </>
@@ -1125,6 +1108,7 @@ export function ScheduleNavigator3D() {
         <DemoTourPanel />
         <MilestoneAlertsPanel
           alerts={data?.milestoneAlerts}
+          projections={milestoneProjection}
           onFocus={(alert) =>
             controllerRef.current?.focusDateSpan(alert.plannedStart, alert.plannedEnd)
           }

@@ -1,4 +1,5 @@
 import type { MilestoneAlert, NavigatorWaypoint, ScheduleNavigatorPayload } from "./aggregate";
+import type { MilestoneProjection } from "./routes";
 
 /**
  * "What's coming up" for the navigator, in the shape a satnav gives it:
@@ -30,15 +31,18 @@ function daysBetween(fromIso: string, toIso: string): number {
   return Math.round((parseMs(toIso) - parseMs(fromIso)) / 86_400_000);
 }
 
-function milestoneManeuver(alert: MilestoneAlert): Maneuver {
+/**
+ * With a projection (the route taken), the milestone lands on its projected
+ * completion and says how far behind that is; without one, on its planned
+ * end with the measured delay (the payload's own view).
+ */
+function milestoneManeuver(alert: MilestoneAlert, projection?: MilestoneProjection): Maneuver {
+  const behind = projection ? projection.slipDays : alert.delayDays;
   return {
     kind: "milestone",
     label: alert.milestoneName,
-    detail:
-      alert.delayDays > 0
-        ? `Milestone completes · ${alert.delayDays}d behind`
-        : "Milestone completes",
-    dateIso: alert.plannedEnd,
+    detail: behind > 0 ? `Milestone completes · ${behind}d behind` : "Milestone completes",
+    dateIso: projection?.projectedEnd ?? alert.plannedEnd,
     daysAway: 0,
   };
 }
@@ -98,6 +102,8 @@ export function buildNextUp(
   revised?: {
     byWaypointId: Record<string, { projectedEnd: string; residualLocal: number }>;
     projectedEnd: string;
+    /** Per-milestone projected completion on the same route. */
+    milestones?: Record<string, MilestoneProjection>;
   }
 ): Maneuver[] {
   const fromMs = parseMs(fromIso);
@@ -109,7 +115,9 @@ export function buildNextUp(
   });
 
   const candidates: Maneuver[] = [
-    ...(payload.milestoneAlerts ?? []).map(milestoneManeuver),
+    ...(payload.milestoneAlerts ?? []).map((a) =>
+      milestoneManeuver(a, revised?.milestones?.[a.milestoneId])
+    ),
     ...effective
       .map(waypointManeuver)
       .filter((m): m is Maneuver => m !== null),

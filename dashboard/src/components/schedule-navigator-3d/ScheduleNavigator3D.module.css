@@ -1786,6 +1786,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Projected (not yet happened) slip: same shape as the measured badge but
+ * outlined, so "will be late on this route" never reads as "is late". */
+.alertDaysProjected {
+  padding: 0.05rem 0.35rem;
+  border-radius: 2px;
+  border: 1px solid #141414;
+  color: #141414;
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .alertOnPlan {
   font-size: 0.66rem;
   color: var(--chrome-muted);

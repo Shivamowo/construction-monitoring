@@ -32,6 +32,26 @@ export interface ProjectableWaypoint {
   scheduleNodes?: ScheduleNode[];
 }
 
+/**
+ * What the recovery routes currently taken do to the schedule. Built from
+ * the taken offers (see lib/schedule-navigator/routes.ts), never by hand.
+ */
+export interface RouteEffects {
+  /**
+   * waypointId → days of that waypoint's MEASURED slip clawed back — the
+   * finish its successors see moves in by that much (never below zero slip).
+   * The original catch-up semantics: the route works on downstream tasks,
+   * but is keyed to the delay it buys back.
+   */
+  slip: Record<string, number>;
+  /**
+   * taskId → days cut from that not-yet-measured task's planned duration
+   * (never below one day). How a route acts on work still ahead — the only
+   * kind of recovery available once you are past the delay itself.
+   */
+  compress: Record<string, number>;
+}
+
 /** DERIVED — one waypoint's projected dates after the forward pass. */
 export interface ProjectedWaypoint {
   /** Own measured delay still standing after any recovery on this waypoint (days). */
@@ -40,7 +60,17 @@ export interface ProjectedWaypoint {
   cascadeBefore: number;
   /** Total shift of this waypoint's finish vs plan (days). */
   cascadeAfter: number;
+  /** Earliest projected start across the waypoint's tasks. */
+  projectedStart: string;
   projectedEnd: string;
+}
+
+/** DERIVED — one task's projected dates, for roll-ups that are not per waypoint. */
+export interface ProjectedTask {
+  plannedEnd: string;
+  projectedEnd: string;
+  /** True when the finish is an as-built measurement, not a forecast. */
+  measured: boolean;
 }
 
 const DAY_MS = 86400000;
@@ -53,30 +83,27 @@ function fromDay(day: number): string {
   return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
+interface PassResult {
+  es: number;
+  ef: number;
+  logicShift: number;
+}
+
 /**
  * Forward-pass critical-path re-level.
  *
  * Each unmeasured task starts at the latest of its planned start and every
  * predecessor constraint (FS: pred finish + lag; SS: pred start + lag;
  * FF: pred finish + lag − own duration; SF: pred start + lag − own duration),
- * then runs for its planned duration. Planned start is a floor: the engine
- * never pulls work earlier than the plan of record, so a zero-delay project
- * projects exactly onto its plan.
+ * then runs for its planned duration (less any `effects.compress` on it).
+ * Planned start is a floor: the engine never pulls work earlier than the
+ * plan of record, so a zero-delay project projects exactly onto its plan and
+ * a recovery can at best bring work back onto plan, not ahead of it.
  *
  * A task with an as-built record is measured, not computed: its finish is
- * planned finish + measured slip. `recoveries[waypointId] = days` pulls a
- * measured slip on that waypoint's tasks in by up to `days` (never below
- * zero slip) — the finish its successors see, which is what a catch-up route
- * buys back downstream.
- *
- * Waypoints without scheduleNodes (e.g. the dummy scenario) fall back to
- * their own planned end + residual local delay, with no propagation: no
- * dependency data means no cascade is claimed.
+ * planned finish + measured slip, less any `effects.slip` on its waypoint.
  */
-export function computeProjectedSchedule(
-  waypoints: ProjectableWaypoint[],
-  recoveries: Record<string, number> = {}
-): ProjectedWaypoint[] {
+function forwardPass(waypoints: ProjectableWaypoint[], effects: Partial<RouteEffects>) {
   type Node = ScheduleNode & { waypointIndex: number };
   const nodes = new Map<string, Node>();
   waypoints.forEach((w, waypointIndex) => {
@@ -85,21 +112,25 @@ export function computeProjectedSchedule(
     }
   });
 
-  const recoveredFor = (waypointIndex: number) => {
+  const slipRecoveredFor = (waypointIndex: number) => {
     const w = waypoints[waypointIndex];
-    return Math.min(Math.max(0, recoveries[w.id] ?? 0), Math.max(0, w.localDelayDays));
+    return Math.min(Math.max(0, effects.slip?.[w.id] ?? 0), Math.max(0, w.localDelayDays));
   };
 
-  const early = new Map<string, { es: number; ef: number; logicShift: number }>();
+  const early = new Map<string, PassResult>();
   const visiting = new Set<string>();
 
-  const pass = (id: string): { es: number; ef: number; logicShift: number } => {
+  const pass = (id: string): PassResult => {
     const hit = early.get(id);
     if (hit) return hit;
     const node = nodes.get(id)!;
     const ps = toDay(node.plannedStart);
     const pe = toDay(node.plannedEnd);
-    const dur = pe - ps;
+    const plannedDur = pe - ps;
+    const dur =
+      node.measuredSlipDays == null
+        ? Math.max(Math.min(plannedDur, 1), plannedDur - Math.max(0, effects.compress?.[id] ?? 0))
+        : plannedDur;
 
     // Cycle guard: a malformed link loop falls back to planned dates for
     // the task that closes it rather than recursing forever.
@@ -125,11 +156,11 @@ export function computeProjectedSchedule(
     const es = Math.max(ps, logicStart);
     const logicShift = Math.max(0, es - ps);
 
-    let result: { es: number; ef: number; logicShift: number };
+    let result: PassResult;
     if (node.measuredSlipDays != null) {
       const slip = node.measuredSlipDays;
       const effectiveSlip =
-        slip > 0 ? Math.max(0, slip - recoveredFor(node.waypointIndex)) : slip;
+        slip > 0 ? Math.max(0, slip - slipRecoveredFor(node.waypointIndex)) : slip;
       const ef = pe + effectiveSlip;
       result = { es: ef - dur, ef, logicShift };
     } else {
@@ -139,9 +170,25 @@ export function computeProjectedSchedule(
     return result;
   };
 
+  return { nodes, pass, slipRecoveredFor };
+}
+
+/**
+ * Per-waypoint projection. `effects` carries the recovery routes taken (see
+ * RouteEffects). Waypoints without scheduleNodes (e.g. the dummy scenario)
+ * fall back to their own planned end + residual local delay, with no
+ * propagation: no dependency data means no cascade is claimed.
+ */
+export function computeProjectedSchedule(
+  waypoints: ProjectableWaypoint[],
+  effects: Partial<RouteEffects> = {}
+): ProjectedWaypoint[] {
+  const { pass, slipRecoveredFor } = forwardPass(waypoints, effects);
+
   return waypoints.map((w, waypointIndex) => {
-    const recovered = recoveredFor(waypointIndex);
+    const recovered = slipRecoveredFor(waypointIndex);
     const residualLocal = Math.max(0, w.localDelayDays - recovered);
+    const plannedStart = toDay(w.plannedStart);
     const plannedEnd = toDay(w.plannedEnd);
     const members = w.scheduleNodes ?? [];
 
@@ -150,14 +197,17 @@ export function computeProjectedSchedule(
         residualLocal,
         cascadeBefore: 0,
         cascadeAfter: residualLocal,
+        projectedStart: fromDay(plannedStart),
         projectedEnd: fromDay(plannedEnd + residualLocal),
       };
     }
 
+    let start = Number.POSITIVE_INFINITY;
     let finish = Number.NEGATIVE_INFINITY;
     let inherited = 0;
     for (const n of members) {
       const r = pass(String(n.taskId));
+      start = Math.min(start, r.es);
       finish = Math.max(finish, r.ef);
       inherited = Math.max(inherited, r.logicShift);
     }
@@ -166,9 +216,34 @@ export function computeProjectedSchedule(
       residualLocal,
       cascadeBefore: Math.min(inherited, cascadeAfter),
       cascadeAfter,
+      projectedStart: fromDay(start),
       projectedEnd: fromDay(Math.max(finish, plannedEnd)),
     };
   });
+}
+
+/**
+ * Per-task projection, for roll-ups that don't follow waypoint grouping
+ * (milestones group by source-schedule hierarchy). A measured task reports
+ * its as-built finish — a route taken since can't un-happen it.
+ */
+export function projectedTaskEnds(
+  waypoints: ProjectableWaypoint[],
+  effects: Partial<RouteEffects> = {}
+): Map<string, ProjectedTask> {
+  const { nodes, pass } = forwardPass(waypoints, effects);
+  const out = new Map<string, ProjectedTask>();
+  for (const [id, node] of nodes) {
+    const measured = node.measuredSlipDays != null;
+    out.set(id, {
+      plannedEnd: node.plannedEnd,
+      projectedEnd: measured
+        ? fromDay(toDay(node.plannedEnd) + node.measuredSlipDays!)
+        : fromDay(pass(id).ef),
+      measured,
+    });
+  }
+  return out;
 }
 
 /**
@@ -189,4 +264,9 @@ export function projectedFinish(
   });
   if (!Number.isFinite(end)) return { projectedEnd: "", daysBehind: 0 };
   return { projectedEnd: fromDay(end), daysBehind: Math.max(0, end - planned) };
+}
+
+/** Whole days from `fromIso` to `toIso` (negative if earlier). */
+export function daysBetweenIso(fromIso: string, toIso: string): number {
+  return toDay(toIso) - toDay(fromIso);
 }

@@ -827,3 +827,35 @@ Layout: the side column now has `contain: size; overflow-y: auto` so the scene s
 Stale figures updated: start page (`lib/projects.ts`: t1 4 Feb, t2 27 Jan, 8 days recovered), demo tour (`lib/demoTour.ts`: 4 Feb → 27 Jan, eight days), HANDOFF tables and limitation #1. The external slide deck (not in this repo) still says 12-day cascade / 7 days / 10 Feb → 3 Feb and needs the numbers above.
 
 **Verified:** API payloads checked directly (t0 29 Jan, t1 4 Feb, t2 27 Jan). DD-route and recovery-plan figures come from running the shipped `cpm.ts` against the rebuilt t1 payload. `tsc --noEmit` clean. Task D untouched.
+
+---
+### 2026-09-28 (cont.) — Recursive alternate routes (Task 1 of 3)
+
+**Model.** Routes are now first-class offers, not a `catchUpPlan` hanging off a waypoint. `payload.recoveryOffers[]`: `{id, parentId, depth, waypointId, mode, taskId, daysRecovered, daysLost?, summary, resourceCost, provenance}`. An offer with a `parentId` is only on offer once that parent is taken, so what's offered is keyed to the chain you're on, not to a waypoint. The scene, the maneuver card and the milestone roll-up all derive from one thing: the ordered chain of taken offer ids (`lib/schedule-navigator/routes.ts`: `availableOffers`, `routeEffects`, `scheduleForRoutes`, `milestoneProjections`, `routeImpact`).
+
+**Two route modes, both real CPM effects** (`cpm.ts` `RouteEffects`):
+- `claw-back` (the existing semantics): buys back part of a waypoint's already-measured slip.
+- `compress` (new): cuts days from a not-yet-measured task's planned duration (floor 1 day). A nested route sits past a delay that already happened, so claw-back has nothing to act on there; compress gives it something real.
+
+Planned start stays a floor, so a route can bring work back onto plan but never ahead of it.
+
+**Data (self-authored, labelled).** `substation-t1/recovery-plan.json` gains ids and one nested route: `rp-erection-second-crane`, `after: rp-detailed-design`, compress Transformer Erection 15→12 days (second crane plus night shift). `RecoveryPlanCatchUp` gains optional `id` / `after` / `mode`, documented on the type as our own demo extension and NOT a guess at the external tool's format. Task D and `ingest-recovery-plan.ts` are untouched.
+
+**Depth cap: 3** (`MAX_ROUTE_DEPTH`). Each level is drawn lifted above the path it leaves, and every commit leaves a ghost below the live path. Past three levels, the offered tubes, the live path and the ghosts at one date stop reading as a chain and become a bundle. Deeper or orphaned entries are dropped at aggregation with a footnoted reason, never half-drawn. Checked with a synthetic 4-deep chain: `a@1 b@2 c@3` kept; the depth-4 entry, an orphan, a compress on finished work and a claw-back with no slip each dropped with its reason. t1's real data goes 2 deep: after the second route the project is back on plan, so under the planned-start floor a third route would have nothing to recover.
+
+**Ghosts and revert in a chain.** Each commit ghosts the path as it stood and now also mounts a clickable "Superseded · <finish>" label at the ghost's end. With several ghosts stacked along one path, a 1 px dashed line gives no way to tell which step it is; the label does, and it's a real click target. Reverting to ghost *i* restores that snapshot exactly (control points, finish, chain) and removes ghost *i* and every later one, since you're now back on that path. The previous code kept the clicked ghost drawn under the live path, which duplicated ghosts once you took a new route. Any route nested under a discarded commit goes off offer with it. The controller's route code was restructured around `syncOfferRoutes()`, and the old side-effect camera fly inside the preview builder is gone. After a commit the camera flies only to a newly revealed nested route.
+
+**Maneuver card and milestone alerts stay correct at depth.** Milestone maneuvers used the planned end and measured delay, so "Installation completes" was announced on 14 Jan while t1 projects 20 Jan. They now use each milestone's projected completion on the current route (member tasks' projected ends vs member tasks' planned ends; DERIVED). The alerts panel shows the same projection: an outlined `+Nd proj.` badge for projected slip, distinct from the solid measured `+Nd`, and "Completed … (measured)" for milestones whose tasks are all as-built.
+
+**Verified.** Headless Chrome on t1, driving real clicks on the route tubes and ghost labels:
+
+| Step | Finish | Offered | Card | Civil / Installation / Commissioning |
+|---|---|---|---|---|
+| start | 4 Feb 2027 | DD, DR | 6 days · Site Clearance | +6 / +6 / +6 proj. |
+| take DD | 30 Jan 2027 | DR, **crane (level 2)** | 1 day · Site Clearance | +1 / +1 / +1 |
+| take crane | 29 Jan 2027 | DR | 1 day · Site Clearance | +1 / on plan / on plan |
+| click ghost 0 | 4 Feb 2027 | DD, DR (crane gone) | 6 days · Site Clearance | +6 / +6 / +6 |
+
+A mid-chain revert (ghost 1 → back to 30 Jan with the crane route re-offered), re-taking the crane and then reverting to ghost 0 all land consistently. `tsc --noEmit` clean. ESLint on every touched file shows the same findings as HEAD (diffed). t0/t2 have zero errors and no routes. Schependomlaan has zero errors and still offers its 2 FORGED template routes: the brief says it has none, but it does, for its severe delays, as before this change.
+
+**Not changed:** the Design Review route (self-authored) is worth 0 days to the finish under CPM (5 days of float, no successors). It stays on offer, and Task 2's detail says so rather than hiding it. A claw-back route still moves the recovered waypoint's own projected end (Detailed Design shows 1 Nov after the route although it finished 6 Nov); the milestone roll-up reports the measured finish for completed work.

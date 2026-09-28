@@ -11,8 +11,10 @@ import type {
   DelaySeverity,
   MilestoneAlert,
   NavigatorWaypoint,
+  RecoveryOffer,
   ScheduleNavigatorPayload,
 } from "@/lib/schedule-navigator/aggregate";
+import { isOfferAvailable, routeEffects } from "@/lib/schedule-navigator/routes";
 import {
   computeProjectedSchedule,
   projectedFinish,
@@ -24,7 +26,6 @@ import {
   buildRoutePreviewPoints,
   curvePointAtX,
   rebuildProjectedCurve,
-  recoveryDaysForWaypoint,
   type ShardCluster,
   type NavigatorPathModel,
 } from "./pathFromWaypoints";
@@ -113,15 +114,17 @@ export interface JourneyCallbacks {
   /** Fired when a predicted-risk (forecast) shard on the projected line is clicked. */
   onForecastSelect?: (waypoint: NavigatorWaypoint) => void;
   /** Fired when an alternate-route line (not the delay indicator) is clicked. */
-  onRouteSelect?: (waypoint: NavigatorWaypoint) => void;
+  onRouteSelect?: (offer: RecoveryOffer) => void;
   onSceneReady?: () => void;
-  onCatchUpComplete?: (payload: {
-    waypointId: string;
-    daysRecovered: number;
-    daysLost: number;
-    appliedCount: number;
+  /** Fired once a taken route's morph has landed. */
+  onRouteTaken?: (payload: {
+    offerId: string;
     projectedEnd: string;
     daysBehind: number;
+    /** The chain now taken, in commit order. */
+    takenOfferIds: string[];
+    /** Nested routes that came on offer because of this commit. */
+    revealedOfferIds: string[];
   }) => void;
   /** Fired when the scrub playhead date changes (inspection only — no geometry hide). */
   onScrubChange?: (iso: string) => void;
@@ -130,19 +133,22 @@ export interface JourneyCallbacks {
     historyIndex: number;
     projectedEnd: string;
     daysBehind: number;
-    /** Waypoint ids whose routes are still taken after the revert. */
-    appliedWaypointIds: string[];
+    /** The chain still taken after the revert, in commit order. */
+    takenOfferIds: string[];
   }) => void;
 }
 
 /** Pre-commit snapshot captured on each catch-up commit, for ghost-route revert. */
 interface CommitSnapshot {
-  /** Clone of appliedRecoveries as it was BEFORE this commit. */
-  appliedRecoveries: Record<string, number>;
+  /** The chain taken BEFORE this commit. */
+  takenOfferIds: string[];
   /** Clone of model.projectedControlPoints as they were BEFORE this commit. */
   controlPoints: THREE.Vector3[];
   projectedEndIso: string;
   ghostLine: THREE.Line;
+  /** Clickable "Superseded · <finish>" tag at the ghost's end — with a chain
+   * of ghosts stacked along one path, the only way to tell which is which. */
+  ghostLabel: ScreenLabel;
 }
 
 export interface JourneyControllerOptions {
@@ -155,6 +161,8 @@ export interface JourneyControllerOptions {
    * milestone structure (e.g. Schependomlaan).
    */
   milestoneAlerts?: MilestoneAlert[];
+  /** Recovery routes on offer (routes.ts routeOffers). */
+  offers?: RecoveryOffer[];
   /** DOM host for screen-projected axis labels (inside the viewport). */
   axisOverlay: HTMLElement;
   axisClassNames: {
@@ -171,10 +179,14 @@ export interface JourneyControllerOptions {
 export interface JourneyController {
   setSize: (width: number, height: number) => void;
   dispose: () => void;
-  /** Commit an alternate route: morph the real projected path onto it. */
-  applyCatchUpPlan: (waypointId: string) => void;
+  /** Take an available route: morph the real projected path onto it. */
+  takeRoute: (offerId: string) => void;
   /** Revert to the state captured before commit `historyIndex` (ghost-click). */
   revertToHistory: (historyIndex: number) => void;
+  /** Undo a taken route and everything taken after it. */
+  revertBefore: (offerId: string) => void;
+  /** Fly the camera to an offered route. */
+  focusRoute: (offerId: string) => void;
   /** Dolly the camera toward/away from its current target, clamped. */
   zoomIn: () => void;
   zoomOut: () => void;
@@ -201,7 +213,7 @@ export interface JourneyController {
    * as getShardScreenAnchor but for the route-preview card.
    */
   getRouteScreenAnchor: (
-    waypointId: string
+    offerId: string
   ) => { x: number; y: number; onScreen: boolean } | null;
   /**
    * Fly the camera to a date span on the route (e.g. a milestone's planned
@@ -470,8 +482,8 @@ export function createJourneyController(
   });
 
   function refreshCriticalMarkers() {
-    const critical = computeCriticalPath(model.waypoints, appliedRecoveries);
-    const cascaded = computeProjectedSchedule(model.waypoints, appliedRecoveries);
+    const critical = computeCriticalPath(model.waypoints, currentEffects());
+    const cascaded = computeProjectedSchedule(model.waypoints, currentEffects());
     model.criticalPath = critical.map((entry) => {
       const point = curvePointAtX(
         model.projectedCurve,
@@ -714,8 +726,10 @@ export function createJourneyController(
   let viewW = width;
   let viewH = height;
 
-  /** Compounded recoveries across shards — later plans add, never replace. */
-  const appliedRecoveries: Record<string, number> = {};
+  /** Routes on offer (nested via parentId) and the chain taken, in commit order. */
+  const offers = options.offers ?? [];
+  const takenOfferIds: string[] = [];
+  const currentEffects = () => routeEffects(offers, takenOfferIds);
 
   // --- GSAP camera: idle drift driven by tweened proxy, not render-loop lerp ---
   const driftProxy = { yaw: 0, pitch: 0, radiusBoost: 0 };
@@ -953,25 +967,10 @@ export function createJourneyController(
 
     const routeEntry = findAlternateRouteFromObject(hits[0].object);
     if (routeEntry) {
-      const wp = model.waypoints.find((w) => w.id === routeEntry.waypointId);
-      // Use the source centerline points, not raw geometry vertices — the
-      // preview is a TubeGeometry mesh now, so its "position" attribute is
-      // tube-surface (ring-of-vertices) data, not points along the curve.
-      // Points are raw (unlifted); add the same eased lift the mesh's own
-      // geometry bakes in so the camera frames where the tube actually is.
-      if (routeEntry.points.length) {
-        const midIndex = Math.floor(routeEntry.points.length / 2);
-        const focus = routeEntry.points[midIndex].clone();
-        focus.y += routePreviewLiftAt(
-          routeEntry.points,
-          midIndex,
-          routeEntry.stackIndex
-        );
-        routeEntry.line.localToWorld(focus);
-        root.worldToLocal(focus);
-        flyToFocus(focus);
-      }
-      if (wp) callbacks.onRouteSelect?.(wp);
+      // Source centerline points, not raw geometry vertices (tube-surface
+      // data), lifted to where the mesh actually sits.
+      if (routeEntry.points.length) flyToFocus(routeFocusPoint(routeEntry));
+      callbacks.onRouteSelect?.(routeEntry.offer);
       return;
     }
 
@@ -1296,114 +1295,154 @@ export function createJourneyController(
   callbacks.onScrubChange?.(scrubIso);
 
   /**
-   * Alternate-route lines: one persistent, independently clickable object
-   * per delay that has a catch-up plan — built once at scene setup, always
-   * visible (not conditional on selecting the delay indicator first). Taking
-   * a route hides that specific line (it becomes the committed path instead).
+   * Recovery routes. One entry per offer that has been on offer this
+   * session; its line is shown only while the offer is available
+   * (isOfferAvailable) — top-level offers from the start, nested ones once
+   * the route they hang off has been taken. Everything the scene projects
+   * derives from `takenOfferIds`, the chain of routes taken in commit order.
    */
   interface AlternateRouteEntry {
-    waypointId: string;
+    offer: RecoveryOffer;
     line: THREE.Mesh;
     /** Source centerline points — geometry vertices are tube-surface, not
      * usable for a midpoint focus lookup, so the curve points are kept
      * alongside the mesh. */
     points: THREE.Vector3[];
-    label: ScreenLabel;
-    /** Fixed build-order index — extra vertical stacking so two concurrent
-     * alternate routes (their delay waypoints close together in time) don't
-     * ride coincident; see ALT_ROUTE_STACK_GAP. Stays fixed for the entry's
-     * lifetime, not recomputed on restore/refresh, so a route doesn't jump
-     * height relative to its neighbors. */
+    /** Null while the route is not on offer (its DOM label is unmounted). */
+    label: ScreenLabel | null;
+    /** Extra lift so routes branching close together in time don't ride
+     * coincident; fixed when the entry is first built so a route doesn't
+     * jump height as its neighbours come and go. */
     stackIndex: number;
   }
-  const alternateRoutes: AlternateRouteEntry[] = [];
+  const alternateRoutes = new Map<string, AlternateRouteEntry>();
 
-  function buildAlternateRoutePoints(
-    waypointId: string,
-    opts: { focusCamera?: boolean } = {}
-  ): THREE.Vector3[] | null {
-    const wp = model.waypoints.find((w) => w.id === waypointId);
-    const daysRecovered = recoveryDaysForWaypoint(wp);
-    if (!wp || daysRecovered <= 0) return null;
-    const shard =
-      model.shards.find((s) => s.waypoint.id === waypointId) ??
-      model.forecastShards.find((s) => s.waypoint.id === waypointId);
-    const shardPosition = shard?.position ?? model.todayPosition;
-    // Preview this plan ON TOP of everything already committed, so after a
-    // commit the remaining routes describe the path you'd actually get from
-    // here — not a stale branch off the original baseline.
+  // Stacking only helps (and only costs vertical headroom) when two routes'
+  // branch points actually sit close together in time.
+  const ALT_ROUTE_STACK_PROXIMITY_X = scale.xSpan * 0.08;
+
+  /**
+   * Where a route leaves the path. A claw-back route answers a delay that
+   * already happened, so it leaves from that delay's marker. A compress route
+   * acts on work still ahead, so it leaves the path you are on now (after
+   * the routes already taken) where that task is projected to start.
+   */
+  function branchPointFor(offer: RecoveryOffer): THREE.Vector3 {
+    if (offer.mode === "claw-back") {
+      const shard =
+        model.shards.find((s) => s.waypoint.id === offer.waypointId) ??
+        model.forecastShards.find((s) => s.waypoint.id === offer.waypointId);
+      return (shard?.position ?? model.todayPosition).clone();
+    }
+    const index = model.waypoints.findIndex((w) => w.id === offer.waypointId);
+    const current = computeProjectedSchedule(model.waypoints, currentEffects());
+    const startIso = current[index]?.projectedStart ?? model.todayIso;
+    const x = Math.max(dateToX(startIso, scale), dateToX(model.todayIso, scale));
+    return curvePointAtX(model.projectedCurve, x).position.clone();
+  }
+
+  /** Preview of `offer` taken ON TOP of the chain already taken. Pure — no camera side effects. */
+  function buildAlternateRoutePoints(offer: RecoveryOffer): THREE.Vector3[] | null {
     const targets = buildCatchUpProjectedControls(
       model.waypoints,
       model.timeline,
       model.todayIso,
       model.todayPosition,
-      { ...appliedRecoveries, [waypointId]: daysRecovered },
+      routeEffects(offers, [...takenOfferIds, offer.id]),
       scale
     );
-    if (targets?.length && opts.focusCamera !== false) {
-      flyToFocus(targets[Math.min(2, targets.length - 1)]);
-    }
     if (!targets || targets.length < 2) return null;
-    return buildRoutePreviewPoints(shardPosition, targets);
+    const branch = branchPointFor(offer);
+    const downstream =
+      offer.mode === "claw-back" ? targets : targets.filter((p) => p.x > branch.x + 1e-3);
+    if (downstream.length === 0) return null;
+    return buildRoutePreviewPoints(branch, downstream);
   }
 
-  const planBearingIds = [
-    ...model.shards.map((s) => s.waypoint.id),
-    ...model.forecastShards.map((s) => s.waypoint.id),
-  ].filter((id) => recoveryDaysForWaypoint(model.waypoints.find((w) => w.id === id)) > 0);
-
-  // Stacking only helps (and only costs vertical headroom) when two routes'
-  // branch points actually sit close together in time — a flat build-order
-  // index stacked EVERY route regardless of spacing, which pushed routes far
-  // apart in time up into the planned-reference tube's varying height and
-  // read as a self-intersecting loop where two unrelated tubes crossed in
-  // screen space. Only bump stackIndex for routes within this window of an
-  // already-placed one.
-  const ALT_ROUTE_STACK_PROXIMITY_X = scale.xSpan * 0.08;
-  const placedBranchXs: number[] = [];
-
-  planBearingIds.forEach((waypointId) => {
-    // Mount-time build: no camera fly. Flying here overrode the intro frame
-    // on any project with a route on offer, cropping the route start.
-    const points = buildAlternateRoutePoints(waypointId, { focusCamera: false });
-    if (!points) return;
-    const branchX = points[0].x;
-    const stackIndex = placedBranchXs.filter(
-      (x) => Math.abs(x - branchX) < ALT_ROUTE_STACK_PROXIMITY_X
-    ).length;
-    placedBranchXs.push(branchX);
-    const line = createRoutePreviewLine(points, stackIndex);
-    line.userData.kind = "alternate-route";
-    line.userData.waypointId = waypointId;
-    root.add(line);
-
-    const midIndex = Math.floor(points.length / 2);
-    const midPoint = points[midIndex]
+  function routeLabelPoint(entry: AlternateRouteEntry): THREE.Vector3 {
+    const midIndex = Math.floor(entry.points.length / 2);
+    return entry.points[midIndex]
       .clone()
       .add(
         new THREE.Vector3(
           0,
-          routePreviewLiftAt(points, midIndex, stackIndex) +
+          routePreviewLiftAt(entry.points, midIndex, entry.stackIndex) +
             ROUTE_PREVIEW_LABEL_CLEARANCE,
           0
         )
       );
-    // DOM label (not a WebGL sprite) so it runs through the SAME
-    // syncAllProjectedLabels collision pass as every date/axis label —
-    // a separate sprite-based label was the root cause of the undetected
-    // "ALTERNATE ROUTE" overlap (two unrelated systems, neither aware of
-    // the other's occupied screen space).
-    const label = mountRouteLabelElement(
-      options.axisOverlay,
-      waypointId,
-      "Alternate route",
-      midPoint,
-      { key: options.axisClassNames.key, title: options.axisClassNames.title }
-    );
-    allProjectedLabels.push(label);
+  }
 
-    alternateRoutes.push({ waypointId, line, points, label, stackIndex });
-  });
+  function routeLabelText(offer: RecoveryOffer): string {
+    return offer.depth > 1 ? `Alternate route · level ${offer.depth}` : "Alternate route";
+  }
+
+  function hideRouteEntry(entry: AlternateRouteEntry) {
+    entry.line.visible = false;
+    if (entry.label) {
+      // Remove from the DOM and from the shared collision array — otherwise
+      // syncAllProjectedLabels keeps re-showing it.
+      entry.label.el.remove();
+      const idx = allProjectedLabels.indexOf(entry.label);
+      if (idx >= 0) allProjectedLabels.splice(idx, 1);
+      entry.label = null;
+    }
+  }
+
+  /**
+   * Bring every route line in line with the chain taken: show and re-preview
+   * each offer available now (against the path you are on), hide the rest.
+   * Returns the offers that just came on offer — a nested route revealed by
+   * the commit that preceded this call.
+   */
+  function syncOfferRoutes(): RecoveryOffer[] {
+    const taken = new Set(takenOfferIds);
+    const revealed: RecoveryOffer[] = [];
+    for (const offer of offers) {
+      const entry = alternateRoutes.get(offer.id);
+      const points = isOfferAvailable(offer, taken) ? buildAlternateRoutePoints(offer) : null;
+      if (!points || points.length < 2) {
+        if (entry) hideRouteEntry(entry);
+        continue;
+      }
+      let current = entry;
+      if (!current) {
+        const branchX = points[0].x;
+        const stackIndex = [...alternateRoutes.values()].filter(
+          (e) => e.line.visible && Math.abs(e.points[0].x - branchX) < ALT_ROUTE_STACK_PROXIMITY_X
+        ).length;
+        const line = createRoutePreviewLine(points, stackIndex);
+        line.userData.kind = "alternate-route";
+        line.userData.offerId = offer.id;
+        root.add(line);
+        current = { offer, line, points, label: null, stackIndex };
+        alternateRoutes.set(offer.id, current);
+      } else {
+        updateRoutePreviewLine(current.line, points, current.stackIndex);
+        current.points = points;
+      }
+      current.line.visible = true;
+      if (!current.label) {
+        // DOM label (not a WebGL sprite) so it runs through the SAME
+        // syncAllProjectedLabels collision pass as every date/axis label.
+        current.label = mountRouteLabelElement(
+          options.axisOverlay,
+          offer.id,
+          routeLabelText(offer),
+          routeLabelPoint(current),
+          { key: options.axisClassNames.key, title: options.axisClassNames.title }
+        );
+        allProjectedLabels.push(current.label);
+        revealed.push(offer);
+      } else {
+        current.label.local.copy(routeLabelPoint(current));
+      }
+    }
+    return revealed;
+  }
+
+  // Mount-time build: no camera fly — the intro frame stands.
+  syncOfferRoutes();
 
   // Wider hit-test threshold so thin lines are practical raycast targets.
   raycaster.params.Line = { threshold: 0.18 };
@@ -1425,7 +1464,8 @@ export function createJourneyController(
   }
 
   function findAlternateRouteFromObject(obj: THREE.Object3D): AlternateRouteEntry | null {
-    return alternateRoutes.find((a) => a.line === obj) ?? null;
+    for (const entry of alternateRoutes.values()) if (entry.line === obj) return entry;
+    return null;
   }
 
   /** History index of a clicked/hovered ghost route line, or -1. */
@@ -1435,285 +1475,53 @@ export function createJourneyController(
     return typeof idx === "number" && commitHistory[idx] ? idx : -1;
   }
 
-  function hideAlternateRoute(waypointId: string) {
-    const entry = alternateRoutes.find((a) => a.waypointId === waypointId);
-    if (entry) {
-      entry.line.visible = false;
-      // Remove from the DOM and from the shared collision array — otherwise
-      // syncAllProjectedLabels keeps re-showing it (it only hides labels
-      // that fall off-screen, not ones a caller wants gone for good).
-      entry.label.el.remove();
-      const idx = allProjectedLabels.indexOf(entry.label);
-      if (idx >= 0) allProjectedLabels.splice(idx, 1);
-    }
+  /** Where the camera frames a route: its midpoint, at the lifted height the mesh bakes in. */
+  function routeFocusPoint(entry: AlternateRouteEntry): THREE.Vector3 {
+    const midIndex = Math.floor(entry.points.length / 2);
+    const focus = entry.points[midIndex].clone();
+    focus.y += routePreviewLiftAt(entry.points, midIndex, entry.stackIndex);
+    return focus;
   }
 
-  /**
-   * Put back every route whose recovery is no longer applied — after a revert,
-   * the delays that were "fixed" by the discarded commits are in play again, so
-   * their routes must be offered (and re-labelled) once more.
-   */
-  function restoreAlternateRoutes() {
-    for (const entry of alternateRoutes) {
-      if (entry.line.visible) continue;
-      if (appliedRecoveries[entry.waypointId] != null) continue;
-      const points = buildAlternateRoutePoints(entry.waypointId);
-      if (!points || points.length < 2) continue;
-      updateRoutePreviewLine(entry.line, points, entry.stackIndex);
-      entry.points = points;
-      entry.line.visible = true;
-
-      const midIndex = Math.floor(points.length / 2);
-      const midPoint = points[midIndex]
-        .clone()
-        .add(
-          new THREE.Vector3(
-            0,
-            routePreviewLiftAt(points, midIndex, entry.stackIndex) +
-              ROUTE_PREVIEW_LABEL_CLEARANCE,
-            0
-          )
-        );
-      // The old label element was removed from the DOM by hideAlternateRoute,
-      // so mount a fresh one and re-register it for collision syncing.
-      const label = mountRouteLabelElement(
-        options.axisOverlay,
-        entry.waypointId,
-        "Alternate route",
-        midPoint,
-        { key: options.axisClassNames.key, title: options.axisClassNames.title }
-      );
-      entry.label = label;
-      allProjectedLabels.push(label);
-    }
+  function focusRoute(offerId: string) {
+    const entry = alternateRoutes.get(offerId);
+    if (entry?.line.visible && entry.points.length) flyToFocus(routeFocusPoint(entry));
   }
 
-  /**
-   * Re-preview every route that is still on offer against the current
-   * committed path. Called after each commit so the mechanic is recursive:
-   * the new path keeps offering routes for the delays still ahead of it.
-   */
-  function refreshAlternateRoutes() {
-    for (const entry of alternateRoutes) {
-      if (!entry.line.visible) continue;
-      const points = buildAlternateRoutePoints(entry.waypointId);
-      if (!points || points.length < 2) {
-        hideAlternateRoute(entry.waypointId);
-        continue;
-      }
-      updateRoutePreviewLine(entry.line, points, entry.stackIndex);
-      entry.points = points;
-      const midIndex = Math.floor(points.length / 2);
-      entry.label.local.copy(
-        points[midIndex]
-          .clone()
-          .add(
-            new THREE.Vector3(
-              0,
-              routePreviewLiftAt(points, midIndex, entry.stackIndex) +
-                ROUTE_PREVIEW_LABEL_CLEARANCE,
-              0
-            )
-          )
-      );
-    }
+  function disposeGhost(snapshot: CommitSnapshot) {
+    root.remove(snapshot.ghostLine);
+    snapshot.ghostLine.geometry.dispose();
+    const mat = snapshot.ghostLine.material;
+    if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+    else mat.dispose();
+    const gi = ghostLines.indexOf(snapshot.ghostLine);
+    if (gi >= 0) ghostLines.splice(gi, 1);
+    snapshot.ghostLabel.el.remove();
+    const li = allProjectedLabels.indexOf(snapshot.ghostLabel);
+    if (li >= 0) allProjectedLabels.splice(li, 1);
   }
 
-  function applyCatchUpPlan(waypointId: string) {
-    if (morphing) return;
-    hideAlternateRoute(waypointId);
-    const wp = model.waypoints.find((w) => w.id === waypointId);
-    const daysRecovered = recoveryDaysForWaypoint(wp);
-    if (!wp || daysRecovered <= 0) {
-      const lastCurrent = projectedFinish(
-        model.waypoints,
-        computeProjectedSchedule(model.waypoints, appliedRecoveries)
-      );
-      callbacks.onCatchUpComplete?.({
-        waypointId,
-        daysRecovered: 0,
-        daysLost: wp?.catchUpPlan?.daysLost ?? 0,
-        appliedCount: Object.keys(appliedRecoveries).length,
-        projectedEnd: lastCurrent.projectedEnd,
-        daysBehind: lastCurrent.daysBehind,
-      });
-      return;
-    }
-
-    // Ghost the CURRENT projected path — as it existed right before this
-    // commit — before mutating anything. Persists forever; each subsequent
-    // commit ghosts its own pre-commit state independently, so earlier
-    // ghosts are never lost or overwritten.
-    const ghostCurve = rebuildProjectedCurve(
-      model.projectedControlPoints.map((p) => p.clone())
-    );
-    const ghostLine = createGhostRouteLine(ghostCurve);
-    ghostLine.userData.historyIndex = commitHistory.length;
-    root.add(ghostLine);
-    ghostLines.push(ghostLine);
-
-    // Snapshot the pre-commit state this ghost depicts, so clicking the ghost
-    // can restore exactly what the path looked like before this commit.
-    commitHistory.push({
-      appliedRecoveries: { ...appliedRecoveries },
-      controlPoints: model.projectedControlPoints.map((p) => p.clone()),
-      projectedEndIso: model.timeline.projectedEnd,
-      ghostLine,
-    });
-
-    // Compound with any previously applied plans (steel unresolved stays full).
-    appliedRecoveries[waypointId] = daysRecovered;
-
-    const cascaded = computeProjectedSchedule(model.waypoints, appliedRecoveries);
-    const lastCascaded = projectedFinish(model.waypoints, cascaded);
-    const newProjectedEndIso = lastCascaded.projectedEnd;
-    const newDaysBehind = lastCascaded.daysBehind;
-    model.timeline.projectedEnd = newProjectedEndIso;
-    const targets = buildCatchUpProjectedControls(
-      model.waypoints,
-      model.timeline,
-      model.todayIso,
-      model.todayPosition,
-      { ...appliedRecoveries },
-      scale
-    );
-    if (!targets || targets.length < 2) {
-      callbacks.onCatchUpComplete?.({
-        waypointId,
-        daysRecovered,
-        daysLost: wp.catchUpPlan!.daysLost,
-        appliedCount: Object.keys(appliedRecoveries).length,
-        projectedEnd: newProjectedEndIso,
-        daysBehind: newDaysBehind,
-      });
-      return;
-    }
-
-    while (model.projectedControlPoints.length < targets.length) {
-      model.projectedControlPoints.push(
-        model.projectedControlPoints[
-          model.projectedControlPoints.length - 1
-        ].clone()
-      );
-    }
-    model.projectedControlPoints.length = targets.length;
-
-    morphing = true;
-    idleActive = false;
-    killIdleTweens();
-
-    // Morph from the *current* live path so prior recoveries are preserved.
-    const startPts = targets.map((_, i) =>
-      (
-        model.projectedControlPoints[i] ??
-        model.projectedControlPoints[model.projectedControlPoints.length - 1] ??
-        model.todayPosition
-      ).clone()
-    );
-    startPts[0].copy(model.todayPosition);
-
+  /** Move the projected-end tick and label onto `iso` once a morph lands. */
+  function settleProjectedEnd(iso: string, targetTickX: number) {
     const projectedLabel = screenLabels.find((l) => l.el.dataset.kind === "projectedEnd");
-    const startTickX = projectedEndTick?.position.x ?? dateToX(model.timeline.projectedEnd, scale);
-    const targetTickX = dateToX(newProjectedEndIso, scale);
-
-    const state = { t: 0 };
-    gsap.killTweensOf(state);
-    gsap.to(state, {
-      t: 1,
-      duration: CATCHUP_DURATION,
-      ease: EASE.catchup,
-      onUpdate: () => {
-        // PERF: rebuild TubeGeometry each frame — intentional simplification
-        for (let i = 0; i < targets.length; i++) {
-          model.projectedControlPoints[i].lerpVectors(
-            startPts[i],
-            targets[i],
-            state.t
-          );
-        }
-        rebuildProjectedFromControls();
-
-        if (projectedEndTick) {
-          projectedEndTick.position.x = THREE.MathUtils.lerp(startTickX, targetTickX, state.t);
-        }
-        if (projectedLabel) {
-          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
-        }
-      },
-      onComplete: () => {
-        morphing = false;
-        for (let i = 0; i < targets.length; i++) {
-          model.projectedControlPoints[i].copy(targets[i]);
-        }
-        // Lands settled in confident blue, not mid-morph amber.
-        routeTakenActive = true;
-        rebuildProjectedFromControls();
-        refreshCriticalMarkers();
-
-        if (projectedLabel) {
-          projectedLabel.el.dataset.iso = newProjectedEndIso;
-          projectedLabel.el.dataset.routeTaken = "true";
-          const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
-          if (sub) sub.textContent = formatDay(newProjectedEndIso);
-          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
-          projectedLabel.el.setAttribute("aria-label", `Scrub to Projected end, ${formatDay(newProjectedEndIso)}`);
-        }
-        if (projectedEndTick) {
-          projectedEndTick.position.x = targetTickX;
-        }
-
-        // The committed path is the new current path: every delay still ahead
-        // of it re-offers its own route, previewed against this path (and
-        // compounded on top of what's already been committed), so the mechanic
-        // repeats instead of ending after one commit.
-        refreshAlternateRoutes();
-
-        idleActive = true;
-        if (!userOrbiting) startIdleDrift(true);
-        callbacks.onCatchUpComplete?.({
-          waypointId,
-          daysRecovered,
-          daysLost: wp.catchUpPlan!.daysLost,
-          appliedCount: Object.keys(appliedRecoveries).length,
-          projectedEnd: newProjectedEndIso,
-          daysBehind: newDaysBehind,
-        });
-      },
-    });
+    if (projectedLabel) {
+      projectedLabel.el.dataset.iso = iso;
+      if (routeTakenActive) projectedLabel.el.dataset.routeTaken = "true";
+      else delete projectedLabel.el.dataset.routeTaken;
+      const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
+      if (sub) sub.textContent = formatDay(iso);
+      projectedLabel.local.copy(model.projectedCurve.getPoint(1));
+      projectedLabel.el.setAttribute("aria-label", `Scrub to Projected end, ${formatDay(iso)}`);
+    }
+    if (projectedEndTick) projectedEndTick.position.x = targetTickX;
   }
 
-  /**
-   * Jump the projected path back to the state captured before commit
-   * `historyIndex`, animated with the same morph used going forward. Commits
-   * after that point are discarded — the alternate routes they represented are
-   * no longer reachable once you've stepped back past them.
-   */
-  function revertToHistory(historyIndex: number) {
-    if (morphing) return;
-    const snapshot = commitHistory[historyIndex];
-    if (!snapshot) return;
-
-    // Restore the recovery set exactly as it stood before that commit.
-    for (const k of Object.keys(appliedRecoveries)) delete appliedRecoveries[k];
-    for (const [k, v] of Object.entries(snapshot.appliedRecoveries)) {
-      appliedRecoveries[k] = v;
-    }
-
-    // Drop every ghost/commit AFTER the target (its own ghost stays, so the
-    // same revert can be repeated harmlessly).
-    for (let i = commitHistory.length - 1; i > historyIndex; i--) {
-      const stale = commitHistory[i];
-      root.remove(stale.ghostLine);
-      stale.ghostLine.geometry.dispose();
-      const mat = stale.ghostLine.material;
-      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-      else mat.dispose();
-      const gi = ghostLines.indexOf(stale.ghostLine);
-      if (gi >= 0) ghostLines.splice(gi, 1);
-      commitHistory.splice(i, 1);
-    }
-
-    const targets = snapshot.controlPoints;
+  /** Morph the live projected path onto `targets` (same motion forward and back). */
+  function morphProjectedTo(
+    targets: THREE.Vector3[],
+    targetEndIso: string,
+    onLanded: () => void
+  ) {
     while (model.projectedControlPoints.length < targets.length) {
       model.projectedControlPoints.push(
         model.projectedControlPoints[model.projectedControlPoints.length - 1].clone()
@@ -1721,28 +1529,23 @@ export function createJourneyController(
     }
     model.projectedControlPoints.length = targets.length;
     const startPts = model.projectedControlPoints.map((p) => p.clone());
-
-    const newProjectedEndIso = snapshot.projectedEndIso;
-    const newDaysBehind = projectedFinish(
-      model.waypoints,
-      computeProjectedSchedule(model.waypoints, appliedRecoveries)
-    ).daysBehind;
+    startPts[0].copy(targets[0]);
 
     const projectedLabel = screenLabels.find((l) => l.el.dataset.kind === "projectedEnd");
     const startTickX = projectedEndTick?.position.x ?? dateToX(model.timeline.projectedEnd, scale);
-    const targetTickX = dateToX(newProjectedEndIso, scale);
+    const targetTickX = dateToX(targetEndIso, scale);
 
     morphing = true;
     idleActive = false;
     killIdleTweens();
 
     const state = { t: 0 };
-    gsap.killTweensOf(state);
     gsap.to(state, {
       t: 1,
       duration: CATCHUP_DURATION,
       ease: EASE.catchup,
       onUpdate: () => {
+        // PERF: rebuild TubeGeometry each frame — intentional simplification
         for (let i = 0; i < targets.length; i++) {
           model.projectedControlPoints[i].lerpVectors(startPts[i], targets[i], state.t);
         }
@@ -1750,50 +1553,146 @@ export function createJourneyController(
         if (projectedEndTick) {
           projectedEndTick.position.x = THREE.MathUtils.lerp(startTickX, targetTickX, state.t);
         }
-        if (projectedLabel) {
-          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
-        }
+        if (projectedLabel) projectedLabel.local.copy(model.projectedCurve.getPoint(1));
       },
       onComplete: () => {
         morphing = false;
         for (let i = 0; i < targets.length; i++) {
           model.projectedControlPoints[i].copy(targets[i]);
         }
-        model.timeline.projectedEnd = newProjectedEndIso;
-        // Index 0's snapshot is the pre-any-commit state: reverting to it means
-        // nothing is taken, so the path goes back to the amber "at risk" tube.
-        routeTakenActive = historyIndex > 0;
+        model.timeline.projectedEnd = targetEndIso;
+        routeTakenActive = takenOfferIds.length > 0;
         rebuildProjectedFromControls();
         refreshCriticalMarkers();
-
-        if (projectedLabel) {
-          projectedLabel.el.dataset.iso = newProjectedEndIso;
-          if (routeTakenActive) projectedLabel.el.dataset.routeTaken = "true";
-          else delete projectedLabel.el.dataset.routeTaken;
-          const sub = projectedLabel.el.querySelector(`.${options.axisClassNames.sub}`);
-          if (sub) sub.textContent = formatDay(newProjectedEndIso);
-          projectedLabel.local.copy(model.projectedCurve.getPoint(1));
-          projectedLabel.el.setAttribute(
-            "aria-label",
-            `Scrub to Projected end, ${formatDay(newProjectedEndIso)}`
-          );
-        }
-        if (projectedEndTick) projectedEndTick.position.x = targetTickX;
-
-        // Delays that are "back in play" after stepping back re-offer routes.
-        restoreAlternateRoutes();
-        refreshAlternateRoutes();
-
+        settleProjectedEnd(targetEndIso, targetTickX);
+        onLanded();
         idleActive = true;
         if (!userOrbiting) startIdleDrift(true);
-        callbacks.onRevert?.({
-          historyIndex,
-          projectedEnd: newProjectedEndIso,
-          daysBehind: newDaysBehind,
-          appliedWaypointIds: Object.keys(appliedRecoveries),
-        });
       },
     });
+  }
+
+  /**
+   * Take a route: ghost the path as it stands, append the offer to the chain,
+   * and morph onto the re-levelled path. The routes on offer are then
+   * re-previewed against the new path — including any nested route that
+   * only exists now that this one is taken.
+   */
+  function takeRoute(offerId: string) {
+    if (morphing) return;
+    const offer = offers.find((o) => o.id === offerId);
+    if (!offer || !isOfferAvailable(offer, new Set(takenOfferIds))) return;
+    const entry = alternateRoutes.get(offerId);
+    if (entry) hideRouteEntry(entry);
+
+    // Ghost the CURRENT projected path — as it stood right before this
+    // commit. Clicking it later reverts to exactly this state.
+    const ghostCurve = rebuildProjectedCurve(
+      model.projectedControlPoints.map((p) => p.clone())
+    );
+    const historyIndex = commitHistory.length;
+    const ghostLine = createGhostRouteLine(ghostCurve);
+    ghostLine.userData.historyIndex = historyIndex;
+    root.add(ghostLine);
+    ghostLines.push(ghostLine);
+    const ghostLabel = mountRouteLabelElement(
+      options.axisOverlay,
+      `ghost-${historyIndex}`,
+      `Superseded · ${formatDay(model.timeline.projectedEnd)}`,
+      ghostCurve.getPoint(1),
+      { key: options.axisClassNames.key, title: options.axisClassNames.title }
+    );
+    ghostLabel.el.dataset.kind = "ghost";
+    ghostLabel.el.setAttribute("role", "button");
+    ghostLabel.el.setAttribute(
+      "aria-label",
+      `Revert to the route that finished ${formatDay(model.timeline.projectedEnd)}`
+    );
+    ghostLabel.el.addEventListener("click", () => revertToHistory(historyIndex));
+    allProjectedLabels.push(ghostLabel);
+    commitHistory.push({
+      takenOfferIds: [...takenOfferIds],
+      controlPoints: model.projectedControlPoints.map((p) => p.clone()),
+      projectedEndIso: model.timeline.projectedEnd,
+      ghostLine,
+      ghostLabel,
+    });
+
+    takenOfferIds.push(offerId);
+    const finish = projectedFinish(
+      model.waypoints,
+      computeProjectedSchedule(model.waypoints, currentEffects())
+    );
+    const targets = buildCatchUpProjectedControls(
+      model.waypoints,
+      model.timeline,
+      model.todayIso,
+      model.todayPosition,
+      currentEffects(),
+      scale
+    );
+    const landed = (revealed: RecoveryOffer[]) =>
+      callbacks.onRouteTaken?.({
+        offerId,
+        projectedEnd: finish.projectedEnd,
+        daysBehind: finish.daysBehind,
+        takenOfferIds: [...takenOfferIds],
+        revealedOfferIds: revealed.map((o) => o.id),
+      });
+    if (!targets || targets.length < 2) {
+      model.timeline.projectedEnd = finish.projectedEnd;
+      landed(syncOfferRoutes());
+      return;
+    }
+    morphProjectedTo(targets, finish.projectedEnd, () => {
+      const revealed = syncOfferRoutes();
+      // A route that only exists now is the thing to look at next.
+      if (revealed.length) focusRoute(revealed[0].id);
+      landed(revealed);
+    });
+  }
+
+  /**
+   * Step back to the state captured before commit `historyIndex` — the path
+   * that commit's ghost depicts. That ghost and every later one are removed
+   * (you are back on it), the chain is cut to what it was then, and any
+   * route nested under a discarded commit goes off offer with it.
+   */
+  function revertToHistory(historyIndex: number) {
+    if (morphing) return;
+    const snapshot = commitHistory[historyIndex];
+    if (!snapshot) return;
+
+    takenOfferIds.length = 0;
+    takenOfferIds.push(...snapshot.takenOfferIds);
+    for (let i = commitHistory.length - 1; i >= historyIndex; i--) {
+      disposeGhost(commitHistory[i]);
+      commitHistory.splice(i, 1);
+    }
+
+    const daysBehind = projectedFinish(
+      model.waypoints,
+      computeProjectedSchedule(model.waypoints, currentEffects())
+    ).daysBehind;
+    morphProjectedTo(
+      snapshot.controlPoints.map((p) => p.clone()),
+      snapshot.projectedEndIso,
+      () => {
+        syncOfferRoutes();
+        callbacks.onRevert?.({
+          historyIndex,
+          projectedEnd: snapshot.projectedEndIso,
+          daysBehind,
+          takenOfferIds: [...takenOfferIds],
+        });
+      }
+    );
+  }
+
+  /** Undo `offerId` and everything taken after it. */
+  function revertBefore(offerId: string) {
+    const index = takenOfferIds.indexOf(offerId);
+    if (index >= 0) revertToHistory(index);
   }
 
   function dollyBy(factor: number) {
@@ -1855,8 +1754,10 @@ export function createJourneyController(
   return {
     setSize,
     dispose,
-    applyCatchUpPlan,
+    takeRoute,
     revertToHistory,
+    revertBefore,
+    focusRoute,
     zoomIn: () => dollyBy(0.82),
     zoomOut: () => dollyBy(1.22),
     setHoverEnabled: (active: boolean) => {
@@ -1901,13 +1802,10 @@ export function createJourneyController(
       if (!anchorPos) return null;
       return projectLocalToScreen(anchorPos);
     },
-    getRouteScreenAnchor: (waypointId: string) => {
-      const entry = alternateRoutes.find((a) => a.waypointId === waypointId);
+    getRouteScreenAnchor: (offerId: string) => {
+      const entry = alternateRoutes.get(offerId);
       if (!entry || !entry.line.visible || !entry.points.length) return null;
-      const midIndex = Math.floor(entry.points.length / 2);
-      const anchorPos = entry.points[midIndex].clone();
-      anchorPos.y += routePreviewLiftAt(entry.points, midIndex, entry.stackIndex);
-      return projectLocalToScreen(anchorPos);
+      return projectLocalToScreen(routeFocusPoint(entry));
     },
     shardCount: model.shards.length,
     clusterCount: model.clusters.length,

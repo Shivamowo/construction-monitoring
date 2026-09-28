@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import type { MilestoneAlert } from "@/lib/schedule-navigator/aggregate";
+import type { MilestoneProjection } from "@/lib/schedule-navigator/routes";
 import styles from "./ScheduleNavigator3D.module.css";
 
 interface MilestoneAlertsPanelProps {
   alerts: MilestoneAlert[] | undefined;
+  /** DERIVED — projected completion per milestone on the route currently taken. */
+  projections?: Record<string, MilestoneProjection>;
   onFocus: (alert: MilestoneAlert) => void;
 }
 
@@ -25,7 +28,7 @@ function formatShort(iso: string): string {
  * narrative reason. Hidden entirely until some milestone is actually late,
  * same as the planned-reference line.
  */
-export function MilestoneAlertsPanel({ alerts, onFocus }: MilestoneAlertsPanelProps) {
+export function MilestoneAlertsPanel({ alerts, projections, onFocus }: MilestoneAlertsPanelProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   if (!alerts || !alerts.some((a) => a.delayDays > 0)) return null;
 
@@ -38,6 +41,8 @@ export function MilestoneAlertsPanel({ alerts, onFocus }: MilestoneAlertsPanelPr
         {alerts.map((alert) => {
           const late = alert.delayDays > 0;
           const causes = alert.rootCause ?? [];
+          const projection = projections?.[alert.milestoneId];
+          const projectedSlip = projection?.slipDays ?? 0;
           return (
             <li key={alert.milestoneId}>
               <button
@@ -52,9 +57,17 @@ export function MilestoneAlertsPanel({ alerts, onFocus }: MilestoneAlertsPanelPr
               >
                 <span className={styles.alertHead}>
                   <span className={styles.alertName}>{alert.milestoneName}</span>
-                  <span className={late ? styles.alertDays : styles.alertOnPlan}>
-                    {late ? `+${alert.delayDays}d` : "On plan"}
-                  </span>
+                  {late ? (
+                    <span className={styles.alertDays} title="Measured: already behind">
+                      +{alert.delayDays}d
+                    </span>
+                  ) : projectedSlip > 0 ? (
+                    <span className={styles.alertDaysProjected} title="Projected on the route taken (DERIVED)">
+                      +{projectedSlip}d proj.
+                    </span>
+                  ) : (
+                    <span className={styles.alertOnPlan}>On plan</span>
+                  )}
                 </span>
                 <span className={styles.alertMeta}>
                   {formatShort(alert.plannedStart)} – {formatShort(alert.plannedEnd)}
@@ -65,6 +78,15 @@ export function MilestoneAlertsPanel({ alerts, onFocus }: MilestoneAlertsPanelPr
                       ? `${alert.totalSlackDays}d float`
                       : "Off critical path"}
                 </span>
+                {projection ? (
+                  <span className={styles.alertMeta}>
+                    {projection.complete
+                      ? `Completed ${formatShort(projection.projectedEnd)} (measured)`
+                      : `Projected completion ${formatShort(projection.projectedEnd)}${
+                          projectedSlip > 0 ? ` · +${projectedSlip}d on this route` : " · on plan"
+                        }`}
+                  </span>
+                ) : null}
                 {late && causes.length > 0 ? (
                   <span className={styles.alertCauses}>
                     <span className={styles.alertCauseLabel}>Root cause</span>

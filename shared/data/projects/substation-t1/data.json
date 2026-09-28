@@ -358,7 +358,7 @@
     "recoveryPlanId": "substation-rp-001",
     "appliedAt": "2026-11-10T09:00:00Z",
     "sourceRef": null,
-    "note": "SELF-AUTHORED DEMO DATA — not yet from the external recovery-plan tool (see shared/scripts/ingest-recovery-plan.ts, still blocked on a real sample export). This is the recovery route OFFERED at the 10 Nov status date: the same re-issue that substation-t2 represents once taken. Shown in the navigator as a previewable alternate route alongside the current projected path.",
+    "note": "SELF-AUTHORED DEMO DATA — not yet from the external recovery-plan tool (see shared/scripts/ingest-recovery-plan.ts, still blocked on a real sample export). This is the recovery route OFFERED at the 10 Nov status date: the same re-issue that substation-t2 represents once taken. Shown in the navigator as a previewable alternate route alongside the current projected path. The rp-erection-second-crane entry is nested (\"after\": only offered once rp-detailed-design is taken) and uses the self-authored \"mode\"/\"after\"/\"id\" extension, which is our own demo format, not the external tool's.",
     "revisedTasks": [
       {
         "taskId": "10",
@@ -403,16 +403,27 @@
     ],
     "catchUp": [
       {
+        "id": "rp-detailed-design",
         "taskId": "4",
         "daysRecovered": 5,
         "summary": "Compress Site Clearance from a 10-day to a 6-day baseline (weekend crew) and start Foundations on its heels — recovers 5 of the 6 days Detailed Design put on the cascade.",
         "resourceCost": "+1 clearance crew on weekends, foundations rebar pulled forward 2 weeks"
       },
       {
+        "id": "rp-design-review",
         "taskId": "5",
         "daysRecovered": 2,
         "summary": "Overlap Cable Trenches with Foundations instead of running them in series — recovers 2 of the 4 days Design Review slipped.",
         "resourceCost": "+1 civil crew working alongside foundations, shared excavator time"
+      },
+      {
+        "id": "rp-erection-second-crane",
+        "after": "rp-detailed-design",
+        "mode": "compress",
+        "taskId": "14",
+        "daysRecovered": 3,
+        "summary": "Only worth it once the Detailed Design route has pulled Civil Works back in: bring a second mobile crane for Transformer Erection and run a night shift on dressing and oil filling, taking erection from 15 to 12 days.",
+        "resourceCost": "+1 100 t mobile crane (2-week hire), night-shift erection crew, crane pad ready 2 days earlier"
       }
     ]
   }
