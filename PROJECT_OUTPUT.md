@@ -757,3 +757,211 @@ User asked what the white line in Phase 1 was and what it was for. Fair question
 This also improves the demo narrative: Phase 1 is now a single clean route, and the second line *appears* in Phase 2 with its meaning self-evident — the gap between planned and projected is the delay.
 
 **Verified:** `tsc --noEmit` clean, zero page errors. t0 legend has no "Planned reference" row and shows one route; t1 has the row and renders three visually distinct families — dark graphite planned, two light-grey alternates, orange projected.
+
+---
+### 2026-09-28 — CPM forward-pass re-level replaces the additive cascade (Task A)
+
+**What changed.** New `dashboard/src/lib/schedule-navigator/cpm.ts`: `computeProjectedSchedule(waypoints, recoveries)` + `projectedFinish()`. Each task starts at the later of its planned start and every predecessor constraint (FS: pred finish+lag; SS: pred start+lag; FF: pred finish+lag−own duration; SF: pred start+lag−own duration), then runs its planned duration. A task with an as-built record keeps its measured finish (planned finish + deviationDays). Planned start is a floor: nothing projects earlier than the plan of record. `recoveries[waypointId]` still feeds in: it pulls that waypoint's measured slip in (clamped to the slip), which is the finish its successors see. The same module runs server-side (`aggregate.ts` → payload) and client-side (taking a route), so the two can't drift.
+
+Each waypoint now carries `scheduleNodes` (member tasks: REAL planned dates and links, REAL `measuredSlipDays`). Link-free tasks sharing a slip value are collapsed to the latest-ending one. That's lossless for the waypoint's projected end and keeps Schependomlaan's payload at 54 KB instead of ~280 KB. Projected dates, `cascadeShiftBefore` (shift inherited through links) and `cascadeShiftAfter` (total finish shift) are DERIVED. `provenance.cascadeModel` is now `"cpm-forward-pass"`, and the "not dependency-graph-aware" footnote is replaced. Projects with no links at all (Schependomlaan) get a footnote saying delay does NOT propagate there, so no cascade is claimed without dependency data. `computeCascadedSchedule` is removed. Every caller that read the *last* waypoint as the project finish now uses `projectedFinish()` (the max), because under real dependencies the last-planned waypoint need not finish last.
+
+**Acceptance results, with numbers. #1 and #2 did not pass as written, and I didn't tune the engine to force them.**
+
+| Check | Result |
+|---|---|
+| 1. t1 + Detailed Design route moves downstream + finish | Downstream moves: Site Clearance 16→11 Nov, Foundations/Cable Trenches 11→6 Dec, Cabling 31→26 Dec, Transformer Erection 5 Jan→31 Dec. **Finish does not move: 29 Jan both ways.** |
+| 2. t1 + `recovery-plan.json` revisions ≈ t2 (3 Feb) | **22 Jan 2027.** 12 days earlier than 3 Feb. The t2 payload itself now also projects 22 Jan. The old 3 Feb was t2's re-baselined 22 Jan plus the additive model's 2+6+4 = 12 days of already-absorbed history, counted again. |
+| 3. t0 projected == planned | Pass: 29 Jan == 29 Jan, every waypoint shift 0. |
+| 4. Schependomlaan renders | Pass: zero page/console errors (headless Chrome). Projected finish is now 15 Oct 2015 (was 19 Mar 2016). The source has no predecessor links, so nothing propagates. |
+
+**Why t1's finish no longer moves: a source-data inconsistency, not an engine bug.** The authored MSPDI has Protection & Control (UID 16) linked **FF+5** from Transformer Erection (UID 14), but dates it 4–14 Jan: its *start* is Erection's finish + 5, i.e. the dates were authored as if the link were FS+5. Under real FF semantics P&C only has to finish by 4 Jan, so it has ~10 days of float. The file's own TotalSlack=0 on both tasks says that float isn't there. t1's 6-day slip lands Erection at 5 Jan, and P&C's planned 4 Jan start and FF bound (10 Jan) both still allow a 14 Jan finish, so the finish holds. If that link is corrected to FS+5 (which matches the file's own dates and slack), the same engine gives **t1 = 4 Feb 2027** (6 days late, matching "Detailed Design finished 6 days late"), and t1 + the DD route gives **30 Jan**. That's a change to authored demo data (`_make-substation-snapshots.py` base file), so I left it for Shivam to decide.
+
+**Hard-coded dates updated to what the engine now shows:** `lib/projects.ts` start-page facts (t1 29 Jan, t2 22 Jan), `lib/demoTour.ts` Phase 3 line (29 Jan → 22 Jan, still seven days), and the HANDOFF verification table and limitation #1.
+
+**Verified:** `npx tsc --noEmit` clean. API payload checked directly for t0/t1/t2/schependomlaan. The route-taking math was checked by running the shipped `cpm.ts` against the t1 payload. All four URLs load in headless Chrome with zero page or console errors, and t1's footer reads "Projected Finish 29 Jan 2027". I did not click-drive "Take this route" in a browser (no interactive browser available); the client path calls the same function checked above.
+
+**Deliberately NOT done:** didn't change the FF+5 link or any authored data. The Phase 2 narrative ("it has slipped… the whole downstream cascade moves with it") is still true for downstream waypoints but not for the finish; left for a product call once the link question is settled. Didn't touch `ingest-recovery-plan.ts` (Task D) or line endings.
+
+---
+### 2026-09-28 (cont.) — Milestone alerts panel (Task B); first-paint framing (Task C)
+
+**Task B — milestone alerts panel.** New `MilestoneAlertsPanel.tsx` in the navigator's right-hand column, under the legend. It uses the same flat, square EY treatment: 3px `#141414` top rule, 2px radii, a black `+Nd` badge with yellow text, and a yellow fill on the selected row. It lists every `milestoneAlerts[]` entry in source order with planned span, critical path or float, and delay days. Late milestones show their full root cause (task name plus the structural reason from `aggregate.ts`, verbatim; no narrative is added). Milestones that aren't late show one line naming their zero-float at-risk tasks, labelled "At risk", never "Root cause", so nothing that hasn't slipped reads as a delay. The title carries a DERIVED tag. The panel returns `null` unless some milestone has `delayDays > 0`, the same rule as the planned-reference line: hidden on t0, shown on t1/t2, hidden on Schependomlaan (no milestones).
+
+Clicking a row calls the new `controller.focusDateSpan(plannedStart, plannedEnd)`. It samples the same points as the red milestone band, centres on them, and calls the existing `flyToFocus` tween with a distance scale so the whole span fits. The tween and easing are unchanged. `flyToFocus` gained an optional `distanceScale` parameter (default 1, so existing callers are unaffected).
+
+Layout: the side column now has `contain: size; overflow-y: auto` so the scene sets the row height and the column scrolls. Without it the five-row t1 list stretched the stage and pushed the scrubber below the fold at 1600×1000. The constraint is reset under 820px, where the column stacks. The demo-tour panel now sits between the legend and the alerts so the tour narration is never scrolled out of view by the list.
+
+**Task C — first-paint framing.** Two changes:
+1. **The actual cause wasn't the intro frame.** `buildAlternateRoutePoints` calls `flyToFocus` as a side effect, and the mount-time loop that draws the offered recovery routes called it once per route. So on any project with a route on offer (t1 has two), the camera flew to a close-up on the projected line roughly a second after the intro frame was placed. That's why only Phase 2 was affected, and why editing `computeCinematicFrame` alone changed nothing visible. I confirmed this by logging the camera position every second in headless Chrome: fitted frame at ~10 s, close-up at ~11 s. The mount-time build now passes `{ focusCamera: false }`. Rebuilds after a commit or revert still fly as before.
+2. **`computeCinematicFrame` now fits the route.** It keeps the tuned viewing direction, re-centres the target on the route's projected footprint (3 passes), and pulls back along that direction until all eight corners of `model.bounds` (route start to finish plus the axis rails) project within ±0.86 NDC. It is never closer than the original tuned distance. It fits against the settled root scale (1.0, after the entrance tween), not the initial 0.97. No change to the entrance, idle or fly motion.
+
+**Verified:** `npx tsc --noEmit` clean. ESLint on touched files reports the same 8 findings as before (1 pre-existing `set-state-in-effect` error at ScheduleNavigator3D.tsx:340, 7 warnings); none new. Headless Chrome, fresh load, camera untouched: t1 at 1600×1000 shows START (1 Oct) through PLANNED END (29 Jan) in frame with the red Engineering band over the route start visible. t0 shows no panel. Clicking the Engineering row flies to and frames the red band. t0/t1/t2/Schependomlaan have zero page or console errors. At 420px wide the column stacks below the scene at full height.
+
+**Deliberately NOT done:** the 3D band isn't highlighted when its row is selected (not asked for). At phone width the % axis labels on the far left sit close to the edge because the portrait aspect limits the fit. Task D (`ingest-recovery-plan.ts`, Stage 4) untouched, as instructed.
+
+---
+### 2026-09-28 (cont.) — Engine verified by trace; Erection → P&C corrected to FS+5; demo numbers re-derived
+
+**Engine verdict: correct.** The suspicion was that a 6-day Detailed Design slip not moving the finish was an engine bug (lag dropped, or first predecessor taken instead of the max). Traced every t1 waypoint before any data change. Transformer Erection has two predecessors: Foundations FS+10 (projected finish 11 Dec → 21 Dec) and Transformer Delivery FS+0 (15 Dec). The engine takes the max, 21 Dec, so both the lag and the max are applied. Erection projects 21 Dec → 5 Jan. One difference from the expected trace: Transformer Delivery does not inherit ~2 days. It hangs off Transformer Order, which has an as-built record (finished on time, 21 Oct), and a measured finish is not re-computed, so Detailed Design's late start never reaches Delivery. The finish held at 29 Jan only because of the FF+5 link from Erection into Protection & Control: under finish-to-finish, P&C only had to finish by 10 Jan against a planned 14 Jan.
+
+**Data fix (construction logic).** `Transformer Erection → Protection & Control` changed from FF+5 to FS+5 in `substation-t0/t1/t2/raw/mspdi.xml`, and all three were rebuilt with `build-project.ts`. Protection and control gear can't be commissioned before the transformer is physically erected, so finish-to-finish (the two running concurrently and ending 5 days apart) is wrong for this pair; finish-to-start + 5 is right. It also matches the file's own dates (P&C planned start 4 Jan = Erection finish 30 Dec + 5) and its own TotalSlack=0 on both tasks. One-line diff per file; line endings untouched. `mspdi-sample` (the generator's base) was not changed; see HANDOFF caveat.
+
+**True figures, new engine (t1 table: planned → projected end):**
+
+| Waypoint | Planned end | t1 projected | t1 + DD route |
+|---|---|---|---|
+| Detailed Design | 31 Oct | 6 Nov | 1 Nov |
+| Site Clearance | 10 Nov | 16 Nov | 11 Nov |
+| Foundations | 5 Dec | 11 Dec | 6 Dec |
+| Transformer Erection | 30 Dec | 5 Jan | 31 Dec |
+| Protection & Control | 14 Jan | 20 Jan | 15 Jan |
+| Pre-commissioning | 24 Jan | 30 Jan | 25 Jan |
+| Energisation | 29 Jan | **4 Feb** | **30 Jan** |
+
+- t0 projected finish: **29 Jan 2027** (= planned).
+- t1 projected finish: **4 Feb 2027**, 6 days late (was stated as 10 Feb / 12-day cascade).
+- Taking the Detailed Design route on t1: **30 Jan 2027**, **5 days recovered**.
+- t2 projected finish: **27 Jan 2027**, **8 days recovered** vs t1 (was stated as 3 Feb / 7 days). Applying `recovery-plan.json` revisions to t1 through the engine also gives 27 Jan, so acceptance #2 now holds. Note that t2's re-issue *states* 22 Jan: its authored P&C start (28 Dec) ignores the 5-day lag after Erection's revised 28 Dec finish, so the engine pushes P&C to 2 Jan and the finish to 27 Jan. That's the re-issue being internally inconsistent, not the engine. Left as is.
+- **Driving constraint:** Detailed Design's measured 6-day slip → Site Clearance → Foundations → Transformer Erection (via Foundations FS+10, which beats Transformer Delivery by 6 days) → Protection & Control (FS+5) → Pre-commissioning → Energisation. Design Basis Report's 2 days is already inside Detailed Design's measured finish. Design Review's 4 days has 5 days of float and no successors, so it propagates nowhere. The old 12 = 2 + 6 + 4 was double-counting both.
+
+Stale figures updated: start page (`lib/projects.ts`: t1 4 Feb, t2 27 Jan, 8 days recovered), demo tour (`lib/demoTour.ts`: 4 Feb → 27 Jan, eight days), HANDOFF tables and limitation #1. The external slide deck (not in this repo) still says 12-day cascade / 7 days / 10 Feb → 3 Feb and needs the numbers above.
+
+**Verified:** API payloads checked directly (t0 29 Jan, t1 4 Feb, t2 27 Jan). DD-route and recovery-plan figures come from running the shipped `cpm.ts` against the rebuilt t1 payload. `tsc --noEmit` clean. Task D untouched.
+
+---
+### 2026-09-28 (cont.) — Recursive alternate routes (Task 1 of 3)
+
+**Model.** Routes are now first-class offers, not a `catchUpPlan` hanging off a waypoint. `payload.recoveryOffers[]`: `{id, parentId, depth, waypointId, mode, taskId, daysRecovered, daysLost?, summary, resourceCost, provenance}`. An offer with a `parentId` is only on offer once that parent is taken, so what's offered is keyed to the chain you're on, not to a waypoint. The scene, the maneuver card and the milestone roll-up all derive from one thing: the ordered chain of taken offer ids (`lib/schedule-navigator/routes.ts`: `availableOffers`, `routeEffects`, `scheduleForRoutes`, `milestoneProjections`, `routeImpact`).
+
+**Two route modes, both real CPM effects** (`cpm.ts` `RouteEffects`):
+- `claw-back` (the existing semantics): buys back part of a waypoint's already-measured slip.
+- `compress` (new): cuts days from a not-yet-measured task's planned duration (floor 1 day). A nested route sits past a delay that already happened, so claw-back has nothing to act on there; compress gives it something real.
+
+Planned start stays a floor, so a route can bring work back onto plan but never ahead of it.
+
+**Data (self-authored, labelled).** `substation-t1/recovery-plan.json` gains ids and one nested route: `rp-erection-second-crane`, `after: rp-detailed-design`, compress Transformer Erection 15→12 days (second crane plus night shift). `RecoveryPlanCatchUp` gains optional `id` / `after` / `mode`, documented on the type as our own demo extension and NOT a guess at the external tool's format. Task D and `ingest-recovery-plan.ts` are untouched.
+
+**Depth cap: 3** (`MAX_ROUTE_DEPTH`). Each level is drawn lifted above the path it leaves, and every commit leaves a ghost below the live path. Past three levels, the offered tubes, the live path and the ghosts at one date stop reading as a chain and become a bundle. Deeper or orphaned entries are dropped at aggregation with a footnoted reason, never half-drawn. Checked with a synthetic 4-deep chain: `a@1 b@2 c@3` kept; the depth-4 entry, an orphan, a compress on finished work and a claw-back with no slip each dropped with its reason. t1's real data goes 2 deep: after the second route the project is back on plan, so under the planned-start floor a third route would have nothing to recover.
+
+**Ghosts and revert in a chain.** Each commit ghosts the path as it stood and now also mounts a clickable "Superseded · <finish>" label at the ghost's end. With several ghosts stacked along one path, a 1 px dashed line gives no way to tell which step it is; the label does, and it's a real click target. Reverting to ghost *i* restores that snapshot exactly (control points, finish, chain) and removes ghost *i* and every later one, since you're now back on that path. The previous code kept the clicked ghost drawn under the live path, which duplicated ghosts once you took a new route. Any route nested under a discarded commit goes off offer with it. The controller's route code was restructured around `syncOfferRoutes()`, and the old side-effect camera fly inside the preview builder is gone. After a commit the camera flies only to a newly revealed nested route.
+
+**Maneuver card and milestone alerts stay correct at depth.** Milestone maneuvers used the planned end and measured delay, so "Installation completes" was announced on 14 Jan while t1 projects 20 Jan. They now use each milestone's projected completion on the current route (member tasks' projected ends vs member tasks' planned ends; DERIVED). The alerts panel shows the same projection: an outlined `+Nd proj.` badge for projected slip, distinct from the solid measured `+Nd`, and "Completed … (measured)" for milestones whose tasks are all as-built.
+
+**Verified.** Headless Chrome on t1, driving real clicks on the route tubes and ghost labels:
+
+| Step | Finish | Offered | Card | Civil / Installation / Commissioning |
+|---|---|---|---|---|
+| start | 4 Feb 2027 | DD, DR | 6 days · Site Clearance | +6 / +6 / +6 proj. |
+| take DD | 30 Jan 2027 | DR, **crane (level 2)** | 1 day · Site Clearance | +1 / +1 / +1 |
+| take crane | 29 Jan 2027 | DR | 1 day · Site Clearance | +1 / on plan / on plan |
+| click ghost 0 | 4 Feb 2027 | DD, DR (crane gone) | 6 days · Site Clearance | +6 / +6 / +6 |
+
+A mid-chain revert (ghost 1 → back to 30 Jan with the crane route re-offered), re-taking the crane and then reverting to ghost 0 all land consistently. `tsc --noEmit` clean. ESLint on every touched file shows the same findings as HEAD (diffed). t0/t2 have zero errors and no routes. Schependomlaan has zero errors and still offers its 2 FORGED template routes: the brief says it has none, but it does, for its severe delays, as before this change.
+
+**Not changed:** the Design Review route (self-authored) is worth 0 days to the finish under CPM (5 days of float, no successors). It stays on offer, and Task 2's detail says so rather than hiding it. A claw-back route still moves the recovered waypoint's own projected end (Detailed Design shows 1 Nov after the route although it finished 6 Nov); the milestone roll-up reports the measured finish for completed work.
+
+---
+### 2026-09-28 (cont.) — Route colour system (Task 3 of 3)
+
+**System** (`scene/pathMeshes.ts` `ROUTE_COLORS` / `STATUS_COLORS`, mirrored as CSS vars in the module):
+- **Identity** (which line is this?) uses only cool hues and neutrals.
+- **Status** (is something wrong?) uses only warm hues: red for delay and critical, amber for predicted risk. No route wears a status colour. The old projected line was the exact amber of the forecast-risk markers sitting on it (`#9A6614`), so it moved to blue. Amber is now only ever risk, and the markers pop off the line instead of vanishing into it. The scrubber's projected state and the "Projected end" label follow; the old terracotta and red on the scrubber's projected tag were also status colours worn as identity.
+
+Colour is never the only channel:
+
+| Role | Colour | Weight | Line | Position | Label |
+|---|---|---|---|---|---|
+| actual | light teal | medium | solid | behind today | "Today" at its end |
+| projected (at risk) | blue | medium | **long-dash tube** | on the path | "Projected end" |
+| taken | deep blue | **thickest**, glossy | solid | on the path | "Projected end" (blue) |
+| offered | pale grey | thin, flat-shaded | solid | **lifted**, one full lift higher per nesting level | "Alternate route (· level N)" |
+| superseded | mid grey | thinnest | **short-dash tube** | **dropped** below the live path | "Superseded · <finish>" (dashed plate, clickable) |
+| planned | graphite | thin | solid | on the plan | "Planned end" |
+
+Dashes are an alpha map striped along each tube's length, so dashed lines keep the full tube weight. The old ghost was a 1 px `LineDashedMaterial`, hard to see and harder to click. The 1 px projected dash overlay is gone, since the tube itself is dashed. The today marker's crossbar was amber and is now neutral ink (today isn't a risk).
+
+**Checked in the scene, not a picker.** Every figure below was measured from rendered pixels: headless Chrome at DPR 2, zoomed with the scene's own + button, t1 before and after taking a route. It is the median of each tube's most-chromatic core (hue-window sampling for hued roles; low-chroma darkest-core sampling in isolated boxes for neutrals). ΔE uses the dataviz skill's own validator maths (Machado 2009 severity 1.0, OKLab ×100), imported from its script, not reimplemented.
+
+Tuning took five render→measure passes; the first pass failed badly. Lit and translucent, the projected blue rendered pale sky-blue (`#9cc6ef`), and superseded and offered rendered as the same pixel colour (`#bac3cd`). The fix was a lightness ladder, not hue:
+
+| Role | Planned | Taken | Projected | Actual | Superseded | Offered | Background |
+|---|---|---|---|---|---|---|---|
+| Rendered L | .43 | .54 | .58 | .75 | .66 | .87 | .98 |
+
+To get there:
+- **Bases:** planned `#191C20` with low env reflection, projected `#0F3766` opaque, taken `#123A6A` with emissive .3, actual `#00765A`.
+- **Neutrals:** offered pushed very pale and superseded mid-grey. Actual is squeezed between projected and offered, and this was the only arrangement where all three separate.
+- **Delay band:** darker body (`#7E2019`, opacity .96, no self-glow), so it separates from the teal it sleeves by lightness; protanopia removes the hue difference.
+
+Rendered: planned `#4e5154` · actual `#64c2a5` · projected `#517cb9` · taken `#406eb0` · offered `#d0d4d9` · superseded `#89929c` · delay band `#d26057` · risk `#b27f3d`.
+
+**CVD separation, adjacent (co-visible) pairs, OKLab ΔE ×100:**
+
+| pair | normal | protan | deutan | tritan |
+|---|---|---|---|---|
+| actual–projected | 21.7 | 21.7 | 21.0 | 17.2 |
+| actual–taken | 25.8 | 25.9 | 25.6 | 21.1 |
+| actual–planned | 33.0 | 34.7 | 31.4 | 33.0 |
+| actual–offered | 15.6 | 9.7 | 12.2 | 16.1 |
+| projected–planned | 17.9 | 19.2 | 17.2 | 16.9 |
+| taken–planned | 15.1 | 16.0 | 14.6 | 13.5 |
+| projected–offered | 30.2 | 28.2 | 31.3 | 30.5 |
+| taken–offered | 34.8 | 32.7 | 36.1 | 34.1 |
+| taken–superseded | 15.4 | 13.6 | 16.5 | 13.8 |
+| offered–superseded | 21.3 | 21.0 | 21.4 | 21.3 |
+| planned–superseded | 22.3 | 22.6 | 22.2 | 22.2 |
+| offered–planned | 43.5 | 43.5 | 43.5 | 43.5 |
+| delay band–actual | 26.4 | 22.2 | 12.8 | 32.0 |
+| delay band–projected | 23.3 | 14.9 | 19.6 | 29.1 |
+| risk–projected | 21.6 | 19.3 | 22.0 | 20.7 |
+| risk–taken | 24.0 | 20.7 | 24.8 | 21.7 |
+
+- **Adjacent pairs:** worst CVD 9.7 (actual–offered, protan), worst normal 15.1 (taken–planned). All pass ≥ 8 CVD and ≥ 15 normal.
+- **Validator on the hued identities** (projected, actual, taken, in adjacency order): lightness band, chroma floor, CVD (worst 21.0) and normal-vision floor (21.7) all pass.
+- **Contrast relief:** actual is 2.03:1 against the surface. The skill makes that legal only with visible labels: the line is anchored by the "Today" label and Task 2's direct label.
+- **The one failing pair, projected–superseded (11.5 normal), is never on screen together.** A ghost exists only once a route is taken, and taking a route replaces the projected tube with the taken one.
+
+**Verified:** `tsc --noEmit` clean, no new ESLint findings (diffed against HEAD). t0/t1/t2/Schependomlaan load with zero page/console errors. t0 reads as a single dashed-blue plan with amber risk markers. Schependomlaan still shows teal actual, graphite planned and its two pale FORGED offers.
+
+---
+### 2026-09-28 (cont.) — Recovery detail in the right column; legend removed (Task 2 of 3)
+
+**Column design: one main slot, no pile.** From top:
+1. **Tour narration**, only while the tour runs (it's what is being read, so nothing pushes it down).
+2. **One main slot** (`RoutePanel.tsx`):
+   - **Resting ("Your route", DERIVED):**
+     - the projected finish on the route taken, with +Nd vs plan;
+     - the chain of routes taken, each with Undo (undoes it and everything after it; same code path as clicking its ghost);
+     - the routes on offer from here, each with its derived finish effect, clickable.
+   - **Route selected:** that route's full detail *replaces* the resting view, and the milestone alerts hide while it's open. Back and Esc return to rest.
+3. **Milestone alerts**, beneath the resting view.
+
+Selecting a route from the list flies the camera to it; clicking a route line in 3D opens the same detail. On narrow screens a 3D click scrolls the stacked column into view.
+
+**Detail content.** Each item is tagged with its provenance:
+- **Finish change:** before → after, DERIVED, with a derived Δ badge.
+- **What the plan claims:** days recovered, REAL/FORGED as tagged, including "of Nd lost at X" (claw-back) or "off X's duration" (compress).
+- **When the two differ, it says so.** Crane route: plan −3d, finish −1d, and the note "only 1 of the 3 days reach the finish; the rest are absorbed downstream". Design Review: ±0d, "the finish doesn't move".
+- **What it does:** the summary, verbatim.
+- **What it costs:** crew, plant and sequence, one per line.
+- **Tasks it moves:** each with before → after and Δ, DERIVED.
+- **Actions:** Take, or "Route taken ✓" plus Undo. Nested routes also say which taken route put them on offer.
+
+**Suggestion fixed.** The "suggested" route was ranked by the plan's *claimed* days, so it recommended Design Review (worth 0 days to the finish under CPM). It now ranks by the derived finish gain per cost burden, and a route that doesn't move the finish is never suggested.
+
+**Legend removed**, JSX and CSS. What replaces it:
+- Task 3's multi-channel line system.
+- Direct labels: "Actual to date" on the teal line, "<Milestone> · Nd late" on each red sleeve.
+- The existing end labels (Planned end / Projected end / Today).
+- "Alternate route (· level N)" and "Superseded · <finish>" tags.
+
+The floating route popover is gone; delay/risk shard cards stay as popovers, since the brief moves only route detail. CSS orphaned by the popover was removed. Other dead classes that predate this work (`scrub*`, `stat*`, `statusBar` …) were left alone. The tour copy was updated: its Phase 3 line claimed a superseded route is drawn on t2, which was never true (t2 is a separate snapshot).
+
+**Verified** (headless Chrome, driving the panel like a user):
+- **t1 chain:** select DD → detail (4 Feb → 30 Jan, −5d, plan −5d of 6d) → take → Back → resting shows the chain [DD] and offers [DR ±0d, crane −1d level 2] → select crane → detail (level 2, "only on offer because you took Detailed Design", 30 Jan → 29 Jan) → take → Esc → resting "29 Jan · On plan".
+- **Undo:** Undo crane → 30 Jan with the crane re-offered; Undo DD → 4 Feb.
+- **Ghost revert:** reverting to ghost 0 from depth 2 works.
+- **Legend:** `legend: false` on every page.
+- **Other projects:** t0 and t2 read "This schedule ships no recovery routes". Schependomlaan's FORGED route selects, takes and reverts through the panel.
+- **Layout:** at 420 px the column stacks under the scene with detail and resting views legible. The demo tour renders narration above Your route and alerts.
+- **Checks:** zero page/console errors throughout; `tsc --noEmit` clean; ESLint on touched files identical to HEAD (diffed).

@@ -32,7 +32,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     body:
       "A second export, taken 10 Nov 2026. The plan has not changed — what is new is what actually happened. Detailed Design finished six days late and it sits on the critical path, so the whole downstream cascade moves with it.",
     look:
-      "The red sleeve over the start of the route is the Engineering milestone running late — delay shown at the level it is assessed, not as one isolated marker. The grey line running alongside is a recovery route on offer; it has not been taken yet.",
+      "The red sleeve over the start of the route is the Engineering milestone running late — delay shown at the level it is assessed, not as one isolated marker. The pale line lifted above the path is a recovery route on offer — pick it under Your route in the side panel to see what it costs and what it does to the finish. It has not been taken yet.",
   },
   {
     project: "substation-t2",
@@ -41,7 +41,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     body:
       "A third export, same status date. The history is byte-identical — a recovery plan cannot rewrite what already happened. What changed is the forward plan: Site Clearance compressed, Cable Trenches overlapped with Foundations, and everything after it pulled in.",
     look:
-      "Projected finish moves from 10 Feb 2027 to 3 Feb 2027 — seven days recovered. The superseded route stays drawn in grey above the one now taken.",
+      "Projected finish moves from 4 Feb 2027 to 27 Jan 2027 — eight days recovered. This re-issue is the recovery already taken: it is now the plan of record, so no routes are on offer.",
   },
 ] as const;
 

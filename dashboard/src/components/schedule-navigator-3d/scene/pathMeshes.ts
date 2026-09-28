@@ -2,13 +2,93 @@ import * as THREE from "three";
 import type { ShardCluster } from "./pathFromWaypoints";
 import { PCT_AXIS_Y_BASE, PCT_AXIS_Y_SPAN } from "./timelineAxis";
 
+/**
+ * Route colour system. Two families that never borrow from each other:
+ *
+ *   IDENTITY (which line is this?) — cool hues and neutrals only.
+ *   STATUS (is something wrong?)   — warm hues only: red = delay/critical,
+ *                                    amber = predicted risk. Reserved; no
+ *                                    route ever wears one, so a red band or
+ *                                    an amber marker always pops off the
+ *                                    line it sits on.
+ *
+ * Colour is never the only channel — every identity also differs in weight,
+ * line (solid/dashed), elevation or label:
+ *
+ *   actual      teal        solid, medium          behind today
+ *   projected   blue        long-dash, medium      "if nothing changes" — provisional
+ *   taken       deep blue   solid, THICKEST, glossy  the route committed to
+ *   offered     pale blue-  solid, thin, flat      LIFTED above the path it leaves
+ *               grey                               (higher per nesting level), labelled
+ *   superseded  grey        short-dash, thinnest,  DROPPED below the live path,
+ *                           faint                  labelled "Superseded · <finish>"
+ *   planned     graphite    solid, thin            on the plan; the gap to it is the delay
+ *
+ * Lit tubes render lighter than their base colour (scene lighting + ACES), so
+ * bases sit ~2 steps darker than the value the eye reads. The figures in
+ * PROJECT_OUTPUT.md (2026-09-28, Task 3) are measured from rendered pixels,
+ * not from these hexes.
+ */
+export const ROUTE_COLORS = {
+  planned: "#191C20",
+  actual: "#00765A",
+  projected: "#0F3766",
+  taken: "#123A6A",
+  offered: "#C8D2DE",
+  superseded: "#5E666F",
+} as const;
+export const STATUS_COLORS = {
+  delay: "#7E2019",
+  critical: "#8C2F26",
+  risk: "#9A6614",
+} as const;
+
 const TUBE_RADIUS_ACTUAL = 0.085;
-const TUBE_RADIUS_PLANNED = 0.055;
-const TUBE_RADIUS_PROJECTED = 0.07;
+const TUBE_RADIUS_PLANNED = 0.05;
+const TUBE_RADIUS_PROJECTED = 0.075;
 /** Boldest of all lines — "this is the route you're on now," confident/current. */
 const TUBE_RADIUS_TAKEN = 0.1;
-/** Visible from afar without competing with the current (taken) path. */
-const TUBE_RADIUS_ROUTE_PREVIEW = 0.075;
+/** Thinner than every live line: an option, not the route. */
+const TUBE_RADIUS_ROUTE_PREVIEW = 0.06;
+/** Thinnest line in the scene: history. */
+const TUBE_RADIUS_GHOST = 0.035;
+/** World units per dash period: long dashes read "provisional", short "gone". */
+const DASH_PERIOD_PROJECTED = 0.62;
+const DASH_PERIOD_GHOST = 0.26;
+
+/**
+ * A dash pattern as an alpha map striped along the tube's length (TubeGeometry
+ * u runs 0→1 along the curve), so a dashed line keeps the full weight and
+ * lighting of a tube instead of dropping to WebGL's 1px LineDashedMaterial.
+ * `onFraction` of each period is drawn. Created lazily: this module is also
+ * evaluated during SSR, where there is no document.
+ */
+function dashAlphaMap(onFraction: number): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 2;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, 64, 2);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, Math.round(64 * onFraction), 2);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+
+function setDashRepeat(
+  material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial,
+  curve: THREE.Curve<THREE.Vector3>,
+  period: number
+) {
+  material.alphaMap?.repeat.set(Math.max(1, curve.getLength() / period), 1);
+}
 /**
  * Vertical clearance for the route-preview tube above whatever tube it runs
  * alongside. Must clear preview radius (0.075) + the thickest tube it can
@@ -89,14 +169,16 @@ export function createPlannedTube(
   /* Recessive graphite reference line. Was 55% opaque, which over a near-
      white scene composited to roughly rgb(144,148,152) and then lifted
      further by tone mapping — it read as a pale, unexplained streak rather
-     than the deliberate reference the legend promises. Opaque and a touch
+     than a deliberate reference line. Opaque and a touch
      darker: still quieter than the live route, but legible as a line. */
+  // Low environment reflection: the room lighting otherwise lifts graphite
+  // to the same lightness as the taken blue, and lightness is what keeps
+  // the two apart under colour-vision deficiency.
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#343A42"),
+    color: new THREE.Color(ROUTE_COLORS.planned),
     metalness: 0,
-    roughness: 0.92,
-    transparent: true,
-    opacity: 0.9,
+    roughness: 1,
+    envMapIntensity: 0.2,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
@@ -128,7 +210,7 @@ export function createActualTube(
 
   /* Light theme: rich teal, matte, shadow-based depth */
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#00695B"),
+    color: new THREE.Color(ROUTE_COLORS.actual),
     metalness: 0,
     roughness: 0.9,
   });
@@ -164,18 +246,21 @@ export function createOrUpdateProjectedTube(
   if (existing) {
     existing.geometry.dispose();
     existing.geometry = geometry;
+    setDashRepeat(existing.material as THREE.MeshStandardMaterial, curve, DASH_PERIOD_PROJECTED);
     return existing;
   }
 
-  /* Light theme: saturated amber, matte translucency, shadow depth */
+  /* Long-dash blue: the route ahead, provisional until a route is taken.
+     Blue, not the old amber — amber is the predicted-risk STATUS colour and
+     the forecast markers sitting on this line wear it. */
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#9A6614"),
+    color: new THREE.Color(ROUTE_COLORS.projected),
     metalness: 0,
-    roughness: 0.9,
-    transparent: true,
-    opacity: 0.8,
-    depthWrite: false,
+    roughness: 0.85,
+    alphaMap: dashAlphaMap(0.72),
+    alphaTest: 0.5,
   });
+  setDashRepeat(material, curve, DASH_PERIOD_PROJECTED);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -212,14 +297,14 @@ export function createOrUpdateTakenRouteTube(
   }
 
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#1E5794"),
+    color: new THREE.Color(ROUTE_COLORS.taken),
     metalness: 0,
-    roughness: 0.9,
+    roughness: 0.55,
     // Warm ambient/env light on a cream backdrop washes out cool blues under
     // physical shading — self-emission keeps the hue reading as saturated
     // confident blue instead of a pale periwinkle.
-    emissive: new THREE.Color("#1E5794"),
-    emissiveIntensity: 0.45,
+    emissive: new THREE.Color(ROUTE_COLORS.taken),
+    emissiveIntensity: 0.3,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
@@ -237,7 +322,7 @@ export function createProjectedDashLine(
   /* Light theme: muted amber dash */
   const geometry = new THREE.BufferGeometry().setFromPoints(pts);
   const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#9A6614"),
+    color: new THREE.Color(ROUTE_COLORS.projected),
     dashSize: 0.45,
     gapSize: 0.3,
     transparent: true,
@@ -341,8 +426,10 @@ export function createRoutePreviewLine(
     TUBE_RADIAL,
     false
   );
+  // Flat (unlit) on purpose: an offer isn't built yet, so it doesn't take
+  // the scene lighting the live tubes do.
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#98A0A9"),
+    color: new THREE.Color(ROUTE_COLORS.offered),
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -352,29 +439,41 @@ export function createRoutePreviewLine(
 }
 
 /**
- * Ghost of a projected-path segment as it existed immediately before a
- * catch-up route was taken — "this used to be the plan, no longer current."
- * Muted grey, low opacity, dashed; kept permanently (never removed), one per
- * commit, so multiple taken routes each leave their own ghost behind.
+ * Ghost of the projected path as it stood immediately before a route was
+ * taken — "this used to be the plan, no longer current." Thinnest, short-dash,
+ * faint grey, dropped just below the live path; one per commit, removed when
+ * you revert past it. A dashed TUBE rather than a 1px line so it's legible
+ * and a practical click target (clicking it reverts).
  */
-export function createGhostRouteLine(curve: THREE.CatmullRomCurve3): THREE.Line {
-  const pts = curve.getPoints(80);
-  const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-  const material = new THREE.LineDashedMaterial({
-    color: new THREE.Color("#AEB4BB"),
-    dashSize: 0.4,
-    gapSize: 0.35,
+export function createGhostRouteLine(curve: THREE.CatmullRomCurve3): THREE.Mesh {
+  const dropped = new THREE.CatmullRomCurve3(
+    curve.points.map((p) => new THREE.Vector3(p.x, p.y - GHOST_DROP, p.z)),
+    false,
+    "catmullrom",
+    curve.tension
+  );
+  const tubular = Math.max(64, Math.floor(dropped.getLength() * 10));
+  const geometry = new THREE.TubeGeometry(dropped, tubular, TUBE_RADIUS_GHOST, 12, false);
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(ROUTE_COLORS.superseded),
     transparent: true,
-    opacity: 0.2,
-    linewidth: 1,
+    opacity: GHOST_OPACITY,
+    alphaMap: dashAlphaMap(0.5),
+    alphaTest: 0.2,
+    depthWrite: false,
   });
-  const line = new THREE.Line(geometry, material);
-  line.computeLineDistances();
-  line.name = "ghost-route";
-  line.userData.kind = "ghost-route";
-  line.position.y -= 0.012; // sit a hair below the live lines, avoid z-fighting
-  return line;
+  setDashRepeat(material, dropped, DASH_PERIOD_GHOST);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "ghost-route";
+  mesh.userData.kind = "ghost-route";
+  return mesh;
 }
+
+/** Resting / hovered opacity for superseded routes (hover says "clickable: revert"). */
+export const GHOST_OPACITY = 0.85;
+export const GHOST_OPACITY_HOVER = 1;
+/** Superseded routes sit just under the live path — history, beneath the present. */
+const GHOST_DROP = 0.09;
 
 /**
  * "Suggested route" pill label that rides along the reroute preview so the
@@ -490,7 +589,7 @@ export function createTodayMarker(
   // Engraved crossbar near the top — like a surveyor's landmark finial
   const barGeo = new THREE.BoxGeometry(0.16, 0.05, 0.05);
   const barMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#8E6B22"),
+    color: new THREE.Color("#2C313A"),
     metalness: 0,
     roughness: 0.4,
   });
@@ -560,7 +659,7 @@ export function createForecastShard(spec: {
   crystalGeo.scale(0.75, 1.35, 0.75);
 
   const crystalMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#9A6614"),
+    color: new THREE.Color(STATUS_COLORS.risk),
     wireframe: true,
     transparent: true,
     opacity: 0.95,
@@ -582,7 +681,7 @@ export function createForecastShard(spec: {
 
   const ringGeo = new THREE.RingGeometry(0.28, 0.33, 48);
   const ringMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#9A6614"),
+    color: new THREE.Color(STATUS_COLORS.risk),
     transparent: true,
     opacity: 0.3,
     side: THREE.DoubleSide,
@@ -725,13 +824,14 @@ export function createMilestoneDelayTube(points: THREE.Vector3[]): THREE.Mesh {
     false
   );
   const material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#A63A30"),
-    emissive: new THREE.Color("#5A1A15"),
-    emissiveIntensity: 0.35,
+    color: new THREE.Color(STATUS_COLORS.delay),
+    // No self-glow and a darker body: the band must separate from the teal it
+    // sleeves by LIGHTNESS, since protanopia collapses red onto teal's hue.
+    envMapIntensity: 0.5,
     metalness: 0,
     roughness: 0.55,
     transparent: true,
-    opacity: 0.72,
+    opacity: 0.96,
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
@@ -754,7 +854,7 @@ export function createCriticalPathAccentTube(
     false
   );
   const material = new THREE.MeshBasicMaterial({
-    color: new THREE.Color("#8C2F26"),
+    color: new THREE.Color(STATUS_COLORS.critical),
     transparent: true,
     opacity: 0.85,
     depthWrite: false,

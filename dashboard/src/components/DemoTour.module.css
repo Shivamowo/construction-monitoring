@@ -18,9 +18,9 @@
   background: var(--brand-yellow);
 }
 
-/* Flows in the navigator's side column, under the legend — no fixed
+/* Flows at the top of the navigator's side column — no fixed
    positioning and no max-height, so it simply takes the height its content
-   needs. The previous floating version had to guess the gap between legend
+   needs. The previous floating version had to guess the gap between panels
    and scrubber, and clipped its own text whenever the guess was low. */
 .panel {
   padding: 0.9rem 1rem 0.85rem;

@@ -65,8 +65,8 @@ the troubleshooting table at the bottom.
 | URL | What you should see |
 |---|---|
 | `localhost:3001/?project=substation-t0` | One clean orange route. Projected finish **29 Jan 2027**. No delay markers. |
-| `localhost:3001/?project=substation-t1` | Green actual + amber projected + graphite planned + two grey alternates. Finish **10 Feb 2027**. |
-| `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **3 Feb 2027**. |
+| `localhost:3001/?project=substation-t1` | Teal actual + dashed blue projected + graphite planned + two pale alternate routes lifted above the path. Finish **4 Feb 2027**. |
+| `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **27 Jan 2027**. |
 
 There is also a **Run demo** button in the header that walks all three phases with
 narration. Fastest way to understand the product.
@@ -145,8 +145,8 @@ the *same* project at three dates:
 | Project | Status date | What it represents |
 |---|---|---|
 | `substation-t0` | 1 Oct 2026 | Plan as issued. No actuals at all. |
-| `substation-t1` | 10 Nov 2026 | Same plan + real actuals. Detailed Design finished 6d late on the critical path. 12-day cascade. |
-| `substation-t2` | 10 Nov 2026 | Identical history, forward plan re-baselined. Recovers 7 days. |
+| `substation-t1` | 10 Nov 2026 | Same plan + real actuals. Detailed Design finished 6d late on the critical path; it drives the finish 6 days late (CPM). |
+| `substation-t2` | 10 Nov 2026 | Identical history, forward plan re-baselined. Recovers 8 days vs t1. |
 
 `mspdi-sample`, `mspdi-demo`, `mspdi-demo-recovered` are earlier iterations, superseded
 by the trio above but left in place and still working.
@@ -190,23 +190,29 @@ If you add a field, tag it. If you compute something, say so.
 
 Honest list. None of these are hidden bugs — they are documented decisions.
 
-1. **The cascade is additive, not a real CPM re-level.** Delay propagates as a running
-   sum of each waypoint's own delay; it does not recompute downstream dates from
-   dependencies and durations. This is the single biggest piece of remaining work.
-   Consequence: a recovery only moves the project finish because the *source file*
-   re-baselines the forward dates, not because the engine re-levels.
+1. ~~The cascade is additive, not a real CPM re-level.~~ Fixed 28 Sep 2026: projected
+   dates come from a forward pass over the schedule's own FS/SS/FF/SF links
+   (`dashboard/src/lib/schedule-navigator/cpm.ts`), verified by hand-trace on t1. Projects
+   with no predecessor links (Schependomlaan) get no propagation at all, by design.
+   Caveat: `_make-substation-snapshots.py` regenerates from `mspdi-sample`, which still
+   has the Erection → P&C link as FF+5; re-running it would revert the FS+5 fix below.
 2. **Recovery plans are self-authored.** The external tool meant to supply them has no
    export format yet. `shared/scripts/ingest-recovery-plan.ts` has an `--inspect` mode
    ready to receive a real sample and is deliberately left inert until one exists.
-   `substation-t1/recovery-plan.json` is demo data, labelled as such.
-3. **`milestoneAlerts` has no dedicated UI panel.** The data layer computes delay days
-   and root cause per milestone; the scene renders the red band, but there is no list
-   view surfacing the alerts directly.
-4. **Camera framing on first paint** can push the start of the route off-screen on
-   Phase 2, so the red milestone band is not always visible until you zoom out. The
-   intro framing is deliberately tuned; changing it needs care.
+   `substation-t1/recovery-plan.json` is demo data, labelled as such. Routes can nest
+   (`after`, `mode`, `id` on a catch-up entry): our own demo extension, documented on
+   `RecoveryPlanCatchUp` — not a guess at the external tool's format.
+3. ~~`milestoneAlerts` has no dedicated UI panel.~~ Done 28 Sep 2026: "Milestone alerts"
+   panel in the side column (`MilestoneAlertsPanel.tsx`), click to focus the span.
+4. ~~Camera framing on first paint~~ Fixed 28 Sep 2026 — cause was a mount-time camera
+   fly inside the alternate-route builder, not the intro frame itself. See the log.
 5. **Stage 4 not started** — continuous execution watching and re-projection. Depends
    on the real recovery-plan format landing first.
+6. **There is no legend, by design** (28 Sep 2026). Lines identify themselves by
+   colour + weight + dash + elevation + direct labels; the system is documented at the
+   top of `scene/pathMeshes.ts` with measured CVD figures in `PROJECT_OUTPUT.md`. If you
+   change a route colour, re-measure it in the rendered scene — lit tubes don't render
+   as their base hex.
 
 ---
 
@@ -247,8 +253,10 @@ once you are both working on this.
 1. Get it running, open all three phase URLs, confirm the finish dates match the table
    in section 2.
 2. Press **Run demo** and let it walk you through.
-3. On Phase 2, click a grey alternate route, read the trade-off panel, press
-   **Take this route** — watch the amber path morph and the finish date move.
+3. On Phase 2, pick **Detailed Design** under *Your route* in the side panel (or click
+   the pale route line), read its detail, press **Take this route** — watch the path
+   morph to solid blue, the finish move, and a level-2 route appear. Click the
+   *Superseded* tag to step back.
 4. Skim the last ~200 lines of `PROJECT_OUTPUT.md` for current context.
 5. Read `aggregate.ts` top to bottom. It is the densest file and the one that explains
    how everything is derived.

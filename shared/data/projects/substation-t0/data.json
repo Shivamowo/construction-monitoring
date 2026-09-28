@@ -180,7 +180,7 @@
       "predecessors": [
         {
           "taskId": 14,
-          "type": "FF",
+          "type": "FS",
           "lagDays": 5
         },
         {

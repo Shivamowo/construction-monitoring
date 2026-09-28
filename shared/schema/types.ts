@@ -384,6 +384,24 @@ export interface RecoveryPlanCatchUp {
   taskId: string;
   /** Days clawed back. Clamped downstream to that task's own delay. */
   daysRecovered: number;
+  /**
+   * SELF-AUTHORED extension (our own demo files only — NOT a guess at the
+   * external recovery-plan tool's export, which is still pending; see
+   * ingest-recovery-plan.ts). Stable id for this route; defaults to
+   * `catchup-<taskId>`.
+   */
+  id?: string;
+  /**
+   * SELF-AUTHORED extension. Id of the route that must be taken before this
+   * one is offered — a route that only exists once you are on another one.
+   */
+  after?: string;
+  /**
+   * SELF-AUTHORED extension. "claw-back" (default): `taskId` is the task
+   * whose already-measured delay this buys back. "compress": `taskId` is a
+   * task not yet started whose planned duration shrinks by `daysRecovered`.
+   */
+  mode?: "claw-back" | "compress";
   /** What is actually being done on site to recover them. */
   summary: string;
   /** What taking this route costs — crew, plant, sequence risk. */

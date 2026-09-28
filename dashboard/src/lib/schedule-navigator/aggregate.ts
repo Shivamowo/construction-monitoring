@@ -9,8 +9,13 @@ import type {
   ProjectMetadata,
   ProvenanceTag,
   RecoveryPlan,
-  RecoveryPlanCatchUp,
 } from "@shared/schema/types";
+import {
+  computeProjectedSchedule,
+  projectedFinish,
+  type ScheduleNode,
+} from "./cpm";
+import { MAX_ROUTE_DEPTH } from "./routes";
 
 export type DelaySeverity = "none" | "mild" | "severe";
 export type DelayCategory = "customs" | "weather" | "labor" | "other";
@@ -71,6 +76,49 @@ export interface MilestoneAlert {
   forecastRisk?: ForecastRisk;
   /** DERIVED — only present when the milestone itself is at risk or already delayed. */
   rootCause?: MilestoneRootCause[];
+  /**
+   * REAL — the milestone's member task ids, from the source schedule's own
+   * summary structure. Lets the client roll up projected dates per milestone
+   * after routes are taken (see routes.ts milestoneProjections).
+   */
+  memberTaskIds: string[];
+}
+
+/**
+ * One recovery route on offer. Routes nest: an offer with a parentId is only
+ * on offer once that parent has been taken, so what is offered is keyed to
+ * the chain of routes you're on, not just to a waypoint.
+ */
+export interface RecoveryOffer {
+  id: string;
+  /** Offer that must be taken first; null = on offer against the plan as issued. */
+  parentId: string | null;
+  /** 1 for a top-level offer, parent's depth + 1 below it. Capped at MAX_ROUTE_DEPTH. */
+  depth: number;
+  /** Waypoint the route acts on / branches from. */
+  waypointId: string;
+  /**
+   * "claw-back": buys back `daysRecovered` of the waypoint's already-measured
+   * slip (the route works downstream; the days come off the delay it
+   * answers). "compress": cuts `daysRecovered` from the planned duration of
+   * `taskId`, a task not yet measured.
+   */
+  mode: "claw-back" | "compress";
+  taskId: string;
+  taskName: string;
+  /** Days the plan claims, clamped to what the mode can act on (slip, or duration − 1). */
+  daysRecovered: number;
+  /** claw-back only: the measured slip being answered. */
+  daysLost?: number;
+  summary: string;
+  resourceCost: string;
+  /**
+   * REAL: taken verbatim from the project's own recovery-plan.json.
+   * FORGED: template text generated for a severe delay on a project that
+   * ships no recovery plan. What a route DOES to the finish is always
+   * DERIVED by the CPM engine, never taken from the plan's claim.
+   */
+  provenance: "REAL" | "FORGED";
 }
 
 export interface NavigatorWaypoint {
@@ -83,12 +131,20 @@ export interface NavigatorWaypoint {
   plannedEnd: string;
   /** Max positive deviationDays in this task group (days). */
   localDelayDays: number;
-  /** Cascaded projected end (ISO date) after cumulative shift + local delay. */
+  /** DERIVED — projected end (ISO date) from the forward-pass re-level (cpm.ts). */
   projectedEnd: string;
-  /** Cumulative shift applied *before* this waypoint's local delay (days). */
+  /** DERIVED — shift inherited from predecessors via dependency links (days). */
   cascadeShiftBefore: number;
-  /** Cumulative shift after this waypoint (days). */
+  /** DERIVED — total shift of this waypoint's projected end vs plan (days). */
   cascadeShiftAfter: number;
+  /**
+   * Member tasks as forward-pass nodes: planned dates + predecessor links
+   * REAL from the source schedule, measuredSlipDays REAL from as-built
+   * records. Lets the client re-level after a recovery. Link-free tasks
+   * sharing a slip value are collapsed to the latest-ending one (lossless
+   * for the waypoint's projected end). Absent on the dummy scenario.
+   */
+  scheduleNodes?: ScheduleNode[];
   counts: {
     onTime: number;
     behind: number;
@@ -104,7 +160,11 @@ export interface NavigatorWaypoint {
   delayCategory?: DelayCategory;
   /** Free-text delay cause — present on dummy scenario; optional until schema lands. */
   delayReason?: string;
-  /** Partial catch-up plan — present on some dummy delays; optional until schema lands. */
+  /**
+   * LEGACY — dummy scenario only. The real pipeline emits routes as
+   * payload.recoveryOffers instead (a nested route has no single waypoint
+   * to hang off); routes.ts routeOffers() reads either.
+   */
   catchUpPlan?: CatchUpPlan;
   /**
    * Cumulative % of total project work (weighted by componentCount) planned
@@ -158,6 +218,8 @@ export interface ScheduleNavigatorPayload {
   waypoints: NavigatorWaypoint[];
   /** Absent on the dummy scenario (predates this feature); always an array (possibly empty) on the real pipeline. */
   milestoneAlerts?: MilestoneAlert[];
+  /** Recovery routes on offer, nested via parentId. Absent on the dummy scenario (see catchUpPlan). */
+  recoveryOffers?: RecoveryOffer[];
   notScheduled: {
     count: number;
     note: string;
@@ -174,18 +236,8 @@ export interface ScheduleNavigatorPayload {
   dataProvenance?: string;
 }
 
-function parseDate(iso: string): Date {
-  return new Date(`${iso}T00:00:00Z`);
-}
-
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
-}
-
-function addDays(iso: string, days: number): string {
-  const d = parseDate(iso);
-  d.setUTCDate(d.getUTCDate() + days);
-  return formatDate(d);
 }
 
 function severityForDelay(days: number): DelaySeverity {
@@ -312,6 +364,8 @@ interface TaskGroup {
   isCriticalPath: boolean;
   /** Least float across the group's tasks (the binding constraint); null if source never computed it. */
   totalSlackDays: number | null;
+  /** Member tasks as forward-pass nodes (see cpm.ts). */
+  nodes: ScheduleNode[];
 }
 
 /**
@@ -399,8 +453,151 @@ function computeMilestoneAlerts(
       delayDays,
       forecastRisk,
       rootCause,
+      memberTaskIds: milestone.memberTaskIds.map(String),
     };
   });
+}
+
+function waypointIdFor(groupKey: string): string {
+  return groupKey.replace(/\s+/g, "-").toLowerCase().slice(0, 64);
+}
+
+/**
+ * Recovery routes on offer. Entries from the project's own
+ * recovery-plan.json are REAL (verbatim); `after` nests an entry under
+ * another, so it is only offered once that one is taken. Clamped to what
+ * each mode can act on; entries that can't act (claw-back against a task
+ * with no measured slip, compress on finished work, orphaned or past
+ * MAX_ROUTE_DEPTH) are dropped and reported rather than drawn inert.
+ */
+function buildRecoveryOffers(
+  plan: RecoveryPlan | undefined,
+  waypoints: NavigatorWaypoint[],
+  schedule: PlannedTask[],
+  taskIdToGroupKey: Map<string, string>,
+  deviationBy: Map<string, AsBuiltDeviation>
+): { offers: RecoveryOffer[]; dropped: string[] } {
+  const waypointById = new Map(waypoints.map((w) => [w.id, w]));
+  const taskById = new Map(schedule.map((t) => [String(t.taskId), t]));
+  const dropped: string[] = [];
+  const candidates: RecoveryOffer[] = [];
+
+  for (const entry of plan?.catchUp ?? []) {
+    const taskId = String(entry.taskId);
+    const id = entry.id ?? `catchup-${taskId}`;
+    const groupKey = taskIdToGroupKey.get(taskId);
+    const waypoint = groupKey ? waypointById.get(waypointIdFor(groupKey)) : undefined;
+    const task = taskById.get(taskId);
+    if (!waypoint || !task) {
+      dropped.push(`${id}: task ${taskId} not in schedule`);
+      continue;
+    }
+    const mode = entry.mode ?? "claw-back";
+    let daysRecovered: number;
+    let daysLost: number | undefined;
+    if (mode === "claw-back") {
+      if (waypoint.localDelayDays <= 0) {
+        dropped.push(`${id}: claw-back against ${waypoint.taskNameEn}, which has no measured slip`);
+        continue;
+      }
+      daysLost = waypoint.localDelayDays;
+      daysRecovered = Math.min(entry.daysRecovered, daysLost);
+    } else {
+      if (deviationBy.get(String(task.componentId ?? task.taskId))?.deviationDays != null) {
+        dropped.push(`${id}: compress on ${waypoint.taskNameEn}, which is already measured`);
+        continue;
+      }
+      const duration =
+        (Date.parse(`${task.plannedEnd}T00:00:00Z`) - Date.parse(`${task.plannedStart}T00:00:00Z`)) /
+        86400000;
+      daysRecovered = Math.min(entry.daysRecovered, duration - 1);
+    }
+    if (daysRecovered <= 0) {
+      dropped.push(`${id}: nothing to recover`);
+      continue;
+    }
+    candidates.push({
+      id,
+      parentId: entry.after ?? null,
+      depth: 1,
+      waypointId: waypoint.id,
+      mode,
+      taskId,
+      taskName: task.taskNameEn || task.taskName,
+      daysRecovered,
+      ...(daysLost != null ? { daysLost } : {}),
+      summary: entry.summary,
+      resourceCost: entry.resourceCost,
+      provenance: "REAL",
+    });
+  }
+
+  // Resolve nesting depth; an offer whose parent isn't on offer can never be
+  // reached, and one past the cap isn't drawn — drop both, with a reason.
+  const byId = new Map(candidates.map((o) => [o.id, o]));
+  const depthOf = (o: RecoveryOffer, seen = new Set<string>()): number => {
+    if (o.parentId === null) return 1;
+    const parent = byId.get(o.parentId);
+    if (!parent || seen.has(o.id)) return Number.POSITIVE_INFINITY;
+    seen.add(o.id);
+    return depthOf(parent, seen) + 1;
+  };
+  const offers: RecoveryOffer[] = [];
+  for (const o of candidates) {
+    const depth = depthOf(o);
+    if (!Number.isFinite(depth)) dropped.push(`${o.id}: nests under ${o.parentId}, which is not on offer`);
+    else if (depth > MAX_ROUTE_DEPTH) dropped.push(`${o.id}: depth ${depth} exceeds the ${MAX_ROUTE_DEPTH}-level cap`);
+    else offers.push({ ...o, depth });
+  }
+
+  // FORGED fallback: a severe delay with no route of its own gets a
+  // template route, as before (keeps the overlay legible on dense real data).
+  for (const w of waypoints) {
+    if (w.severity !== "severe" || !w.delayCategory) continue;
+    if (offers.some((o) => o.waypointId === w.id && o.parentId === null)) continue;
+    const forged = catchUpPlanFor(w.localDelayDays, w.delayCategory);
+    if (forged.daysRecovered <= 0) continue;
+    offers.push({
+      id: `forged-${w.id}`,
+      parentId: null,
+      depth: 1,
+      waypointId: w.id,
+      mode: "claw-back",
+      taskId: w.id,
+      taskName: w.taskNameEn || w.taskName,
+      daysRecovered: forged.daysRecovered,
+      daysLost: forged.daysLost,
+      summary: forged.summary,
+      resourceCost: forged.resourceCost,
+      provenance: "FORGED",
+    });
+  }
+  return { offers, dropped };
+}
+
+/**
+ * Link-free tasks affect only their own waypoint's projected end, which is
+ * the max over members of plannedEnd + slip. For each distinct slip value
+ * only the latest-ending task can be that max, so the rest are dropped —
+ * lossless, and keeps a many-task, link-free schedule (Schependomlaan) from
+ * shipping thousands of nodes.
+ */
+function collapseLinkFreeNodes(
+  nodes: ScheduleNode[],
+  linkedTaskIds: Set<string>
+): ScheduleNode[] {
+  const kept: ScheduleNode[] = [];
+  const latestBySlip = new Map<string, ScheduleNode>();
+  for (const n of nodes) {
+    if (linkedTaskIds.has(n.taskId)) {
+      kept.push(n);
+      continue;
+    }
+    const slipKey = String(n.measuredSlipDays ?? "none");
+    const best = latestBySlip.get(slipKey);
+    if (!best || n.plannedEnd > best.plannedEnd) latestBySlip.set(slipKey, n);
+  }
+  return [...kept, ...latestBySlip.values()];
 }
 
 export function buildScheduleNavigatorPayload(
@@ -450,6 +647,7 @@ export function buildScheduleNavigatorPayload(
         componentIds: new Set(),
         isCriticalPath: false,
         totalSlackDays: null,
+        nodes: [],
       };
       groups.set(key, group);
     }
@@ -462,6 +660,22 @@ export function buildScheduleNavigatorPayload(
     // String(...) so this matches the string-keyed fusionBy/deviationBy maps
     // above even when the real taskId comes through as a JS number.
     group.componentIds.add(String(task.componentId ?? task.taskId));
+    const measured = deviationBy.get(String(task.componentId ?? task.taskId))?.deviationDays;
+    group.nodes.push({
+      taskId: String(task.taskId),
+      plannedStart: task.plannedStart,
+      plannedEnd: task.plannedEnd,
+      ...(task.predecessors?.length
+        ? {
+            predecessors: task.predecessors.map((l) => ({
+              taskId: String(l.taskId),
+              type: l.type,
+              lagDays: l.lagDays ?? 0,
+            })),
+          }
+        : {}),
+      ...(measured != null ? { measuredSlipDays: measured } : {}),
+    });
     group.isCriticalPath = group.isCriticalPath || Boolean(task.isCriticalPath);
     if (task.totalSlackDays != null) {
       group.totalSlackDays =
@@ -471,20 +685,18 @@ export function buildScheduleNavigatorPayload(
     }
   }
 
-  // A recovery route on offer for this snapshot: each entry recovers days
-  // against the waypoint carrying that task's measured delay. Built here so
-  // the drafts map below can attach it once localDelayDays is known —
-  // daysRecovered is clamped to what was actually lost there.
-  const catchUpByGroupKey = new Map<string, RecoveryPlanCatchUp>();
-  for (const entry of availableRecovery?.catchUp ?? []) {
-    const groupKey = taskIdToGroupKey.get(String(entry.taskId));
-    if (groupKey) catchUpByGroupKey.set(groupKey, entry);
-  }
-
   type Draft = Omit<
     NavigatorWaypoint,
     "projectedEnd" | "cascadeShiftBefore" | "cascadeShiftAfter" | "severity"
   > & { localDelayDays: number };
+
+  // Tasks that some other task depends on — these must stay individual
+  // nodes for the forward pass; everything link-free can be collapsed.
+  const linkedTaskIds = new Set<string>();
+  for (const task of schedule) {
+    if (task.predecessors?.length) linkedTaskIds.add(String(task.taskId));
+    for (const l of task.predecessors ?? []) linkedTaskIds.add(String(l.taskId));
+  }
 
   const drafts: Draft[] = [...groups.entries()].map(([key, group]) => {
     group.starts.sort();
@@ -532,22 +744,8 @@ export function buildScheduleNavigatorPayload(
         ? forecastRiskFor(group.isCriticalPath, group.totalSlackDays)
         : undefined;
 
-    // Only meaningful where days were actually lost — recoveryDaysForWaypoint
-    // caps the applied recovery at localDelayDays anyway, so a plan against a
-    // waypoint with no measured delay would be inert.
-    const recoveryEntry = catchUpByGroupKey.get(key);
-    const catchUpPlan: CatchUpPlan | undefined =
-      recoveryEntry && localDelayDays > 0
-        ? {
-            daysLost: localDelayDays,
-            daysRecovered: Math.min(recoveryEntry.daysRecovered, localDelayDays),
-            summary: recoveryEntry.summary,
-            resourceCost: recoveryEntry.resourceCost,
-          }
-        : undefined;
-
     return {
-      id: key.replace(/\s+/g, "-").toLowerCase().slice(0, 64),
+      id: waypointIdFor(key),
       taskName: group.taskName,
       taskNameEn: group.taskNameEn,
       milestoneClass: group.milestoneClass,
@@ -555,10 +753,10 @@ export function buildScheduleNavigatorPayload(
       plannedStart: group.starts[0],
       plannedEnd: group.ends[group.ends.length - 1],
       localDelayDays,
+      scheduleNodes: collapseLinkFreeNodes(group.nodes, linkedTaskIds),
       counts: { onTime, behind, ahead, notScheduled, delayedComponents },
       deviationDaysSource,
       forecastRisk,
-      ...(catchUpPlan ? { catchUpPlan } : {}),
     };
   });
 
@@ -611,15 +809,15 @@ export function buildScheduleNavigatorPayload(
     if (lastKey) milestoneWaypointKeys.add(lastKey);
   }
 
-  let cumulativeShift = 0;
+  const projection = computeProjectedSchedule(drafts);
+
   let cumulativePlannedRunning = 0;
   const waypoints: NavigatorWaypoint[] = drafts.map((draft, i) => {
-    const cascadeShiftBefore = cumulativeShift;
-    const projectedEnd = addDays(
-      draft.plannedEnd,
-      cascadeShiftBefore + draft.localDelayDays
-    );
-    cumulativeShift += draft.localDelayDays;
+    const {
+      projectedEnd,
+      cascadeBefore: cascadeShiftBefore,
+      cascadeAfter: cascadeShiftAfter,
+    } = projection[i];
 
     const priorCumulativePlanned = cumulativePlannedRunning;
     const share = (draft.componentCount / totalComponents) * 100;
@@ -649,16 +847,6 @@ export function buildScheduleNavigatorPayload(
       draft.localDelayDays > 0 && delayCategory
         ? delayReasonFor(draft.milestoneClass, delayCategory, severity)
         : undefined;
-    // A REAL catch-up plan carried on the draft (from this project's own
-    // recovery-plan.json) always wins: it describes a recovery actually on
-    // offer, at whatever delay size. The generated one below is FORGED
-    // template text and only fills in for severe delays on projects that
-    // ship no recovery plan of their own.
-    const catchUpPlan =
-      draft.catchUpPlan ??
-      (severity === "severe" && delayCategory
-        ? catchUpPlanFor(draft.localDelayDays, delayCategory)
-        : undefined);
     const milestone = milestoneWaypointKeys.has(draft.id)
       ? { label: `${draft.milestoneClass} complete` }
       : undefined;
@@ -667,7 +855,7 @@ export function buildScheduleNavigatorPayload(
       ...draft,
       projectedEnd,
       cascadeShiftBefore,
-      cascadeShiftAfter: cumulativeShift,
+      cascadeShiftAfter,
       // Color by local delay introduced at this waypoint (cascade still shifts X).
       // Using cascadeShiftBefore+local would paint nearly the entire route "severe"
       // after early delays accumulate — accurate to that formula, but misleading for
@@ -675,18 +863,23 @@ export function buildScheduleNavigatorPayload(
       severity,
       delayCategory,
       delayReason,
-      catchUpPlan,
       milestone,
       cumulativePlannedPct,
       cumulativeActualPct,
     };
   });
 
-  const projectedEnds = waypoints.map((w) => w.projectedEnd).sort();
   const projectedEnd =
-    projectedEnds[projectedEnds.length - 1] ?? metadata.overallTimeline.end;
+    projectedFinish(drafts, projection).projectedEnd || metadata.overallTimeline.end;
 
   const milestoneAlerts = computeMilestoneAlerts(milestones, schedule, deviationBy);
+  const { offers: recoveryOffers, dropped: droppedOffers } = buildRecoveryOffers(
+    availableRecovery,
+    waypoints,
+    schedule,
+    taskIdToGroupKey,
+    deviationBy
+  );
 
   return {
     projectId: metadata.projectId,
@@ -700,6 +893,7 @@ export function buildScheduleNavigatorPayload(
     },
     waypoints,
     milestoneAlerts,
+    recoveryOffers,
     notScheduled: {
       count: notScheduledCount,
       note: "Unscheduled BIM components (deviationFlag: not_scheduled). Shown as their own category — never folded into behind-schedule or 0% complete.",
@@ -707,10 +901,12 @@ export function buildScheduleNavigatorPayload(
     provenance: {
       deviationDays: "FORGED",
       volumetricDeviationPct: "FORGED",
-      cascadeModel: "illustrative",
+      cascadeModel: "cpm-forward-pass",
     },
     footnotes: [
-      "Cascading delay is illustrative and not dependency-graph-aware — real task dependencies are not in the dataset. Each waypoint’s positive deviationDays shifts all subsequent projected milestones forward on the time axis.",
+      linkedTaskIds.size > 0
+        ? "Projected dates are DERIVED by a forward-pass critical-path re-level over the source schedule's own predecessor links (FS/SS/FF/SF + lag). Tasks with an as-built record keep their measured finish; every other task starts at the later of its planned start and its predecessor constraints and runs its planned duration. Planned start is a floor — nothing is projected earlier than the plan of record."
+        : "Projected dates are DERIVED, but this source schedule carries no predecessor links, so delay does NOT propagate: each waypoint's projected end is its own planned end plus its own measured slip. No cascade is claimed where the dependency data doesn't exist.",
       "Projected line color reflects local delay introduced at each waypoint (FORGED deviationDays), not cumulative cascade. Cascade still stretches projected dates rightward.",
       "deviationDays values shown on this view are tagged FORGED (deviationDaysSource). volumetricDeviationPct is FORGED wherever displayed.",
       "1,203 components with deviationFlag not_scheduled are excluded from the projected route and listed separately.",
@@ -722,7 +918,10 @@ export function buildScheduleNavigatorPayload(
       hasAsBuiltData
         ? "cumulativePlannedPct/cumulativeActualPct are FORGED: weighted by each waypoint's componentCount share of all scheduled components, same S-curve method as the dummy scenario. The asOf-frontier waypoint gets a partial actual value from its own onTime+ahead share; later waypoints have no actual value."
         : "cumulativeActualPct is intentionally absent on every waypoint (no actual-to-date line is drawn): this project has zero as-built tracking, so there is nothing measured yet to honestly show as complete. cumulativePlannedPct is still DERIVED from componentCount share.",
-      "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. catchUpPlan is REAL where the project ships its own recovery-plan.json (the route on offer, taken from that file verbatim); otherwise it is FORGED and generated only for waypoints with a severe (>7 day) delay, to keep the alternate-route overlay legible against real data's density of minor slips.",
+      "delayReason and delayCategory are FORGED template text/values, generated for every waypoint with localDelayDays>0, deterministically mapped from milestoneClass (not random) — mirroring the dummy scenario's tone, not measured mitigation data. recoveryOffers are REAL where the project ships its own recovery-plan.json (each route on offer, taken from that file verbatim — including which route it nests under); a waypoint with a severe (>7 day) delay and no route of its own gets a FORGED template route, to keep the alternate-route overlay legible against real data's density of minor slips. What any route does to the projected finish is DERIVED by the CPM engine, never taken from the plan's own claim.",
+      ...(droppedOffers.length
+        ? [`recoveryOffers: ${droppedOffers.length} route(s) in recovery-plan.json were not offered — ${droppedOffers.join("; ")}.`]
+        : []),
       "milestone markers are FORGED: one per tracked milestoneClass (Structure/Framing/Envelope/Finishes), placed at that class's last waypoint by plannedEnd.",
       "forecastRisk is REAL/DERIVED wherever the source schedule provides isCriticalPath/totalSlackDays (MSPDI-sourced projects): a zero-float critical-path task is \"elevated\" risk, a task with 5 or fewer days of float is \"watch\", only ever set on waypoints with no already-realized delay (localDelayDays===0). Absent entirely for projects without real CPM float data (e.g. Schependomlaan).",
       milestoneAlerts.length > 0

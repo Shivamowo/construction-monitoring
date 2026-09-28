@@ -12,8 +12,8 @@ import styles from "./DemoTour.module.css";
 
 /**
  * The tour has two pieces in two different places: the trigger lives in the
- * header, the narration panel flows inside the navigator's side column under
- * the legend. They are separate components rather than one fixed-position
+ * header, the narration panel flows at the top of the navigator's side column,
+ * above the route panel. They are separate components rather than one fixed-position
  * overlay because the panel needs to take its natural height in that column —
  * a floating card had to guess at the space available and clipped its own
  * text when it guessed low.
