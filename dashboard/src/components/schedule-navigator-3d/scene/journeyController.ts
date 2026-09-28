@@ -179,8 +179,8 @@ export interface JourneyControllerOptions {
 export interface JourneyController {
   setSize: (width: number, height: number) => void;
   dispose: () => void;
-  /** Take an available route: morph the real projected path onto it. */
-  takeRoute: (offerId: string) => void;
+  /** Take an available route: morph the real projected path onto it. False if refused (mid-morph / not on offer). */
+  takeRoute: (offerId: string) => boolean;
   /** Revert to the state captured before commit `historyIndex` (ghost-click). */
   revertToHistory: (historyIndex: number) => void;
   /** Undo a taken route and everything taken after it. */
@@ -687,6 +687,38 @@ export function createJourneyController(
   // One combined array so month/key/% labels all collision-avoid each other
   // uniformly (see syncAllProjectedLabels) instead of two blind, unaware systems.
   const allProjectedLabels: ScreenLabel[] = [...screenLabels, ...pctLabels];
+
+  /**
+   * Direct labels — with no legend, the lines that have no end label of
+   * their own name themselves: the actual-to-date line, and each milestone
+   * running late (the red sleeve), in the same collision pass as every
+   * other label. Informational only; clicks fall through to the scene.
+   */
+  function mountDirectLabel(id: string, kind: string, text: string, at: THREE.Vector3) {
+    const label = mountRouteLabelElement(options.axisOverlay, id, text, at, {
+      key: options.axisClassNames.key,
+      title: options.axisClassNames.title,
+    });
+    label.el.dataset.kind = kind;
+    allProjectedLabels.push(label);
+  }
+  if (model.hasActualData) {
+    mountDirectLabel("actual", "actual", "Actual to date", model.actualCurve.getPoint(0.82));
+  }
+  (options.milestoneAlerts ?? [])
+    .filter((alert) => alert.delayDays > 0)
+    .forEach((alert) => {
+      const points = milestoneBandPoints(alert.plannedStart, alert.plannedEnd);
+      const mid = points[Math.floor(points.length / 2)];
+      if (mid) {
+        mountDirectLabel(
+          `band-${alert.milestoneId}`,
+          "band",
+          `${alert.milestoneName} · ${alert.delayDays}d late`,
+          mid
+        );
+      }
+    });
 
   // Axis endpoints in local space for drag → date mapping
   const axisStartLocal = new THREE.Vector3(0, scale.axisY + 0.55, scale.axisZ);
@@ -1578,10 +1610,10 @@ export function createJourneyController(
    * re-previewed against the new path — including any nested route that
    * only exists now that this one is taken.
    */
-  function takeRoute(offerId: string) {
-    if (morphing) return;
+  function takeRoute(offerId: string): boolean {
+    if (morphing) return false;
     const offer = offers.find((o) => o.id === offerId);
-    if (!offer || !isOfferAvailable(offer, new Set(takenOfferIds))) return;
+    if (!offer || !isOfferAvailable(offer, new Set(takenOfferIds))) return false;
     const entry = alternateRoutes.get(offerId);
     if (entry) hideRouteEntry(entry);
 
@@ -1642,7 +1674,7 @@ export function createJourneyController(
     if (!targets || targets.length < 2) {
       model.timeline.projectedEnd = finish.projectedEnd;
       landed(syncOfferRoutes());
-      return;
+      return true;
     }
     morphProjectedTo(targets, finish.projectedEnd, () => {
       const revealed = syncOfferRoutes();
@@ -1650,6 +1682,7 @@ export function createJourneyController(
       if (revealed.length) focusRoute(revealed[0].id);
       landed(revealed);
     });
+    return true;
   }
 
   /**

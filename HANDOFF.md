@@ -65,7 +65,7 @@ the troubleshooting table at the bottom.
 | URL | What you should see |
 |---|---|
 | `localhost:3001/?project=substation-t0` | One clean orange route. Projected finish **29 Jan 2027**. No delay markers. |
-| `localhost:3001/?project=substation-t1` | Green actual + amber projected + graphite planned + two grey alternates. Finish **4 Feb 2027**. |
+| `localhost:3001/?project=substation-t1` | Teal actual + dashed blue projected + graphite planned + two pale alternate routes lifted above the path. Finish **4 Feb 2027**. |
 | `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **27 Jan 2027**. |
 
 There is also a **Run demo** button in the header that walks all three phases with
@@ -199,13 +199,20 @@ Honest list. None of these are hidden bugs — they are documented decisions.
 2. **Recovery plans are self-authored.** The external tool meant to supply them has no
    export format yet. `shared/scripts/ingest-recovery-plan.ts` has an `--inspect` mode
    ready to receive a real sample and is deliberately left inert until one exists.
-   `substation-t1/recovery-plan.json` is demo data, labelled as such.
+   `substation-t1/recovery-plan.json` is demo data, labelled as such. Routes can nest
+   (`after`, `mode`, `id` on a catch-up entry): our own demo extension, documented on
+   `RecoveryPlanCatchUp` — not a guess at the external tool's format.
 3. ~~`milestoneAlerts` has no dedicated UI panel.~~ Done 28 Sep 2026: "Milestone alerts"
-   panel under the legend (`MilestoneAlertsPanel.tsx`), click to focus the span.
+   panel in the side column (`MilestoneAlertsPanel.tsx`), click to focus the span.
 4. ~~Camera framing on first paint~~ Fixed 28 Sep 2026 — cause was a mount-time camera
    fly inside the alternate-route builder, not the intro frame itself. See the log.
 5. **Stage 4 not started** — continuous execution watching and re-projection. Depends
    on the real recovery-plan format landing first.
+6. **There is no legend, by design** (28 Sep 2026). Lines identify themselves by
+   colour + weight + dash + elevation + direct labels; the system is documented at the
+   top of `scene/pathMeshes.ts` with measured CVD figures in `PROJECT_OUTPUT.md`. If you
+   change a route colour, re-measure it in the rendered scene — lit tubes don't render
+   as their base hex.
 
 ---
 
@@ -246,8 +253,10 @@ once you are both working on this.
 1. Get it running, open all three phase URLs, confirm the finish dates match the table
    in section 2.
 2. Press **Run demo** and let it walk you through.
-3. On Phase 2, click a grey alternate route, read the trade-off panel, press
-   **Take this route** — watch the amber path morph and the finish date move.
+3. On Phase 2, pick **Detailed Design** under *Your route* in the side panel (or click
+   the pale route line), read its detail, press **Take this route** — watch the path
+   morph to solid blue, the finish move, and a level-2 route appear. Click the
+   *Superseded* tag to step back.
 4. Skim the last ~200 lines of `PROJECT_OUTPUT.md` for current context.
 5. Read `aggregate.ts` top to bottom. It is the densest file and the one that explains
    how everything is derived.

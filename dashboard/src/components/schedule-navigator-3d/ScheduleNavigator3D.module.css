@@ -435,7 +435,7 @@
   }
 }
 
-/* Fullscreen target — canvas + status bar + legend + filter chips all live
+/* Fullscreen target — canvas + status bar + route panel + filter chips all live
  * under .stage, so fullscreening it (not just the canvas) brings the whole
  * chrome along while leaving the outer app shell/nav behind. The browser's
  * default fullscreen backdrop is black; give it the same cream backdrop
@@ -668,7 +668,7 @@
   pointer-events: none;
 }
 
-/* —— Side panel: legend only now — the detail card floats instead —— */
+/* —— Side panel: tour narration + route panel (resting view or route detail) + milestone alerts —— */
 .sidePanel {
   display: flex;
   flex-direction: column;
@@ -779,262 +779,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Route comparison: current (status quo) vs suggested (cost + recovery) */
-.routeCompare {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
-}
-
-/* Quiet baseline — the non-action, not a competing option. */
-.routeOption {
-  padding: var(--space-1) var(--space-3);
-  border-radius: calc(var(--chrome-radius) - 4px);
-  border: none;
-  background: transparent;
-  opacity: 0.7;
-}
-
-/* Dominant element — the actual decision (cost/consequence), boosted to
- * read as the card's focal point rather than sitting at the same visual
- * weight as the do-nothing baseline above. */
-.routeOptionSuggested {
-  padding: var(--space-3);
-  border: 1.5px solid var(--chrome-accent-border-strong);
-  background: var(--chrome-accent-bg);
-  box-shadow: 0 2px 8px rgba(224, 196, 0, 0.18);
-  opacity: 1;
-}
-
-.routeOptionLabel {
-  margin: 0 0 0.15rem;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--chrome-faint);
-}
-
-.routeOptionSuggested .routeOptionLabel {
-  color: var(--chrome-accent-strong);
-  font-size: 0.7rem;
-}
-
-.routeOptionMeta {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--chrome-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.routeOptionSuggested .routeOptionMeta {
-  font-size: 1.05rem;
-  font-weight: 750;
-  color: var(--chrome-text);
-}
-
-.routeOptionDivider {
-  align-self: center;
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--chrome-faint);
-}
-
-.legendSection {
-  padding: var(--chrome-pad-y) var(--chrome-pad-x);
-  border-radius: 2px;
-  border: 1px solid var(--grid-line);
-  border-top: 3px solid var(--ink);
-  background: var(--paper-glow);
-  flex-shrink: 0;
-}
-
-.legendTitle {
-  margin: 0 0 var(--space-3);
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.legendList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  font-size: 0.72rem;
-  color: var(--chrome-muted);
-  line-height: 1.25;
-}
-
-.legendList li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 1.25rem;
-}
-
-.swatchActual {
-  width: 1rem;
-  height: 0.3rem;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: #00806b;
-}
-
-.swatchPlanned {
-  width: 1rem;
-  height: 0.3rem;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: #3a4048;
-}
-
-.swatchProjected {
-  width: 1rem;
-  height: 0.3rem;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: repeating-linear-gradient(90deg,
-      var(--route-projected) 0 5px,
-      transparent 5px 9px);
-  opacity: 0.9;
-}
-
-.swatchAlternate {
-  width: 1rem;
-  height: 0.16rem;
-  flex-shrink: 0;
-  background: #a5b4c6;
-}
-
-.swatchTaken {
-  width: 1rem;
-  height: 0.34rem;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: var(--route-taken);
-}
-
-.swatchToday {
-  width: 0.24rem;
-  height: 0.65rem;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: linear-gradient(180deg, #f2ebe0, #c4a574);
-}
-
-.swatchShard {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 2px;
-  flex-shrink: 0;
-  background: #c62828;
-  transform: rotate(15deg);
-}
-
-/* Milestone-wide delay reads as a BAND, not a point — the swatch is a bar
-   rather than a dot so the legend matches what the route actually shows. */
-.swatchMilestoneDelay {
-  width: 1.05rem;
-  height: 0.3rem;
-  border-radius: 1px;
-  flex-shrink: 0;
-  background: #b3352e;
-  opacity: 0.78;
-}
-
-.swatchForecast {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 2px;
-  flex-shrink: 0;
-  background: transparent;
-  border: 1.5px solid #c1811c;
-  transform: rotate(15deg);
-}
-
-.swatchCritical {
-  width: 0.55rem;
-  height: 0.55rem;
-  flex-shrink: 0;
-  border: 1.5px solid #622a19;
-  transform: rotate(45deg);
-}
-
-.swatchSlack {
-  width: 0.85rem;
-  height: 0.14rem;
-  flex-shrink: 0;
-  background: repeating-linear-gradient(90deg,
-      #b8aa98 0 3px,
-      transparent 3px 6px);
-  opacity: 0.75;
-}
-
-.swatchMilestone {
-  width: 0.55rem;
-  height: 0.55rem;
-  flex-shrink: 0;
-  border: 1.5px solid #1a463d;
-  transform: rotate(45deg);
-}
-
 .criticalReadout {
   margin-top: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--chrome-border);
-}
-
-.recommendationBadge {
-  display: grid;
-  gap: var(--space-1);
-  margin: var(--space-3) 0;
-  padding: var(--space-2) var(--space-3);
-  border-left: 2px solid var(--chrome-accent);
-  background: rgba(224, 196, 0, 0.1);
-  color: var(--chrome-accent);
-  font-size: 0.63rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.recommendationBadge span {
-  color: var(--chrome-muted);
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 1.35;
-  text-transform: none;
-}
-
-.recommendationNote {
-  margin: var(--space-3) 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px dashed rgba(224, 196, 0, 0.55);
-  color: var(--chrome-muted);
-  font-size: 0.7rem;
-  line-height: 1.35;
-}
-
-.recommendationNote strong {
-  color: var(--chrome-accent);
-}
-
-.swatchGhost {
-  width: 0.65rem;
-  height: 0.14rem;
-  flex-shrink: 0;
-  background: repeating-linear-gradient(90deg,
-      var(--route-superseded) 0 3px,
-      transparent 3px 6px);
-  opacity: 0.8;
 }
 
 .forecastTag {
@@ -1287,6 +1035,23 @@
 
 .axisKey[data-kind="route"] [data-part="text"] {
   border-bottom: 2px solid #a5b4c6;
+}
+
+/* Direct labels replacing the legend: the actual line names itself in its
+   own (teal) ink, a late milestone's sleeve in status red. Informational —
+   clicks fall through to the scene. */
+.axisKey[data-kind="actual"],
+.axisKey[data-kind="band"] {
+  pointer-events: none;
+  cursor: default;
+}
+
+.axisKey[data-kind="actual"] {
+  color: #1d6e5c;
+}
+
+.axisKey[data-kind="band"] {
+  color: var(--status-delay);
 }
 
 /* Superseded-route tag at a ghost's end. Dashed plate echoes the dashed
@@ -1597,76 +1362,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
-
-.primaryBtn {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.88rem;
-  padding: var(--space-2) var(--space-4);
-  border-radius: calc(var(--chrome-radius) - 4px);
-  border: 1px solid var(--chrome-accent-border-strong);
-  background: var(--chrome-accent-bg);
-  color: var(--chrome-accent-strong);
-  box-shadow:
-    0 2px 8px rgba(20, 20, 20, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  transition:
-    background var(--ease-ui),
-    border-color var(--ease-ui),
-    color var(--ease-ui),
-    transform var(--ease-ui),
-    box-shadow var(--ease-ui);
-}
-
-.primaryBtn:hover:not(:disabled) {
-  background: var(--chrome-accent-bg-hover);
-  border-color: var(--chrome-accent);
-  color: var(--chrome-accent-strong);
-  transform: scale(1.02);
-  box-shadow:
-    0 4px 16px rgba(224, 196, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-.primaryBtn:active:not(:disabled) {
-  transform: scale(0.99);
-}
-
-.primaryBtn:disabled {
-  opacity: 0.45;
-  background: var(--chrome-bg-soft);
-  border-color: var(--chrome-border);
-  color: var(--chrome-faint);
-  box-shadow: none;
-  cursor: default;
-}
-
-.recovery {
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border-radius: calc(var(--chrome-radius) - 4px);
-  background: var(--chrome-accent-bg);
-  border: 1px solid var(--chrome-accent-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-.recovery p {
-  margin: var(--space-1) 0 0;
-  font-size: 0.86rem;
-  line-height: 1.4;
-  color: var(--chrome-muted);
-  font-variant-numeric: tabular-nums;
-}
-
 .clusterList {
   list-style: none;
   margin: var(--space-1) 0 var(--space-1);
@@ -1721,7 +1416,7 @@
   font-variant-numeric: tabular-nums;
 }
 /* Milestone alerts — list view of the red milestone bands. Same flat,
- * square EY treatment as the legend above it: 3px ink top rule, 2px radii,
+ * square EY treatment as the route panel above it: 3px ink top rule, 2px radii,
  * black/yellow for state. Hidden entirely until a milestone is late. */
 .alertsSection {
   padding: var(--chrome-pad-y) var(--chrome-pad-x);
@@ -1856,4 +1551,302 @@
 
 .alertCause strong {
   font-weight: 700;
+}
+
+/* Route panel — the right column's resting "Your route" view and, with a
+ * route selected, that route's full detail in its place. Same flat square
+ * EY treatment as the milestone alerts: 3px #141414 rule, 2px radii,
+ * black/yellow only for action and state. No capsules, no frosted glass. */
+.routePanel {
+  padding: var(--chrome-pad-y) var(--chrome-pad-x);
+  border-radius: 2px;
+  border: 1px solid var(--grid-line);
+  border-top: 3px solid #141414;
+  background: #fff;
+  color: #141414;
+  flex-shrink: 0;
+}
+
+.routeBack {
+  display: block;
+  margin: 0 0 var(--space-3);
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #141414;
+  border-radius: 2px;
+  background: #fff;
+  color: #141414;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.routeBack:hover,
+.routeBack:focus-visible {
+  background: #ffe600;
+  outline: none;
+}
+
+.routeKicker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--chrome-muted);
+}
+
+.routeTitle {
+  margin: 0.2rem 0 0.1rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.routeMeta {
+  margin: 0 0 var(--space-3);
+  font-size: 0.68rem;
+  color: var(--chrome-muted);
+}
+
+.routeFigures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.routeFigure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--grid-line);
+  border-radius: 2px;
+}
+
+.routeFigureLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.56rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--chrome-muted);
+}
+
+.routeFigureValue {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.routeFigureNote {
+  font-size: 0.64rem;
+  color: var(--chrome-muted);
+}
+
+.routeDeltaGood {
+  align-self: flex-start;
+  padding: 0.05rem 0.35rem;
+  border-radius: 2px;
+  background: #141414;
+  color: #ffe600;
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.routeDeltaFlat {
+  align-self: flex-start;
+  padding: 0.05rem 0.35rem;
+  border-radius: 2px;
+  border: 1px solid var(--grid-line);
+  color: var(--chrome-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.routeNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 0 var(--space-2);
+  padding: 0.4rem 0.55rem;
+  border-left: 3px solid #ffe600;
+  background: #fafafa;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.routeSubhead {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.routeBody {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.routeCosts {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.routeTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.routeTable th,
+.routeTable td {
+  padding: 0.2rem 0.25rem;
+  border-bottom: 1px solid var(--grid-line);
+  text-align: left;
+  font-weight: 400;
+}
+
+.routeTable th {
+  font-weight: 700;
+}
+
+.routeTable td:last-child {
+  text-align: right;
+  font-weight: 700;
+}
+
+.routeActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.routeTake {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #141414;
+  border-radius: 2px;
+  background: #141414;
+  color: #ffe600;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.routeTake:hover:not(:disabled),
+.routeTake:focus-visible {
+  background: #ffe600;
+  color: #141414;
+  outline: none;
+}
+
+.routeTake:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.routeTaken {
+  padding: 0.45rem 0.75rem;
+  border-radius: 2px;
+  background: #ffe600;
+  color: #141414;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.routeUndo,
+.routeUndoSmall {
+  border: 1px solid #141414;
+  border-radius: 2px;
+  background: #fff;
+  color: #141414;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.routeUndo {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.7rem;
+}
+
+.routeUndoSmall {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.62rem;
+}
+
+.routeUndo:hover,
+.routeUndoSmall:hover:not(:disabled) {
+  background: #ffe600;
+}
+
+.routeFinish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.routeFinishValue {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.routeChain {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+}
+
+.routeChain li {
+  padding-left: 0.1rem;
+}
+
+.routeChain li > * {
+  vertical-align: middle;
+}
+
+.routeChainName {
+  margin-right: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #141414;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.routeOffers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }

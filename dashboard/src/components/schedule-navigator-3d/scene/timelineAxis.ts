@@ -250,7 +250,7 @@ export function syncAllProjectedLabels(
 ): void {
   const ndc = new THREE.Vector3();
   const priority = (kind: string | undefined): number => {
-    if (kind === "route" || kind === "ghost") return 1;
+    if (kind === "route" || kind === "ghost" || kind === "actual" || kind === "band") return 1;
     if (kind === "pct") return 2;
     if (kind === "month") return 3;
     return 0; // start / plannedEnd / today / projectedEnd

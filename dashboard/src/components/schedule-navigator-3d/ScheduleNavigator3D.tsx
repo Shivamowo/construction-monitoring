@@ -22,11 +22,14 @@ import {
   availableOffers,
   milestoneProjections,
   routeEffects,
+  routeImpact,
   routeOffers,
+  scheduleForRoutes,
 } from "@/lib/schedule-navigator/routes";
 import { NextUpBanner } from "./NextUpBanner";
 import { DemoTourPanel } from "@/components/DemoTour";
 import { MilestoneAlertsPanel } from "./MilestoneAlertsPanel";
+import { RoutePanel } from "./RoutePanel";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import {
   createJourneyController,
@@ -48,10 +51,15 @@ function severityRank(s: NavigatorWaypoint["severity"]): number {
   return s === "severe" ? 2 : s === "mild" ? 1 : 0;
 }
 
-function routeScore(offer: RecoveryOffer): number {
-  if (offer.daysRecovered <= 0) return -Infinity;
+/**
+ * DERIVED suggestion score: days the route actually takes off the finish
+ * (CPM, not the plan's own claim) per unit of rough cost burden. A route
+ * that doesn't move the finish is never suggested.
+ */
+function routeScore(offer: RecoveryOffer, finishGainDays: number): number {
+  if (finishGainDays <= 0) return -Infinity;
   const costBurden = Math.max(1, offer.resourceCost.split(",").length + offer.resourceCost.length / 100);
-  return offer.daysRecovered / costBurden;
+  return finishGainDays / costBurden;
 }
 
 const FLOATING_CARD_WIDTH = 300;
@@ -90,7 +98,7 @@ export function ScheduleNavigator3D() {
   const axisOverlayRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<JourneyController | null>(null);
   const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
-  const legendRef = useRef<HTMLDivElement | null>(null);
+  const sidePanelRef = useRef<HTMLElement | null>(null);
   const isDraggingScrubberRef = useRef(false);
 
   const [data, setData] = useState<ScheduleNavigatorPayload | null>(null);
@@ -98,7 +106,8 @@ export function ScheduleNavigator3D() {
   const [selected, setSelected] = useState<NavigatorWaypoint | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<RecoveryOffer | null>(null);
   const [clusterItems, setClusterItems] = useState<NavigatorWaypoint[]>([]);
-  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  /** Offer whose take is in flight (morph running) — disables further takes. */
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
   /** Chain of route (offer) ids taken, in commit order — mirrored from the controller. */
   const [takenRoutes, setTakenRoutes] = useState<string[]>([]);
   const [shardTotal, setShardTotal] = useState(0);
@@ -198,21 +207,19 @@ export function ScheduleNavigator3D() {
           setClusterItems(items);
           setSelected(representative);
           setSelectedRoute(null);
-          setRecoveryOpen(false);
           setStatus("Delay detail open");
         },
         onForecastSelect: (waypoint) => {
           setClusterItems([]);
           setSelected(waypoint);
           setSelectedRoute(null);
-          setRecoveryOpen(false);
           setStatus("Predicted risk detail open");
         },
         onRouteSelect: (offer) => {
           setClusterItems([]);
           setSelected(null);
           setSelectedRoute(offer);
-          setRecoveryOpen(false);
+          revealSidePanel();
           setStatus("Alternate route detail open");
         },
         onSceneReady: () => {
@@ -224,6 +231,7 @@ export function ScheduleNavigator3D() {
         onRouteTaken: ({ projectedEnd, daysBehind, takenOfferIds, revealedOfferIds }) => {
           setProjectedEndIso(projectedEnd);
           setTakenRoutes(takenOfferIds);
+          setPendingRoute(null);
           setStatus(
             `Route taken (${takenOfferIds.length} in chain). Projected finish ${formatDay(projectedEnd)} (+${daysBehind}d).` +
               (revealedOfferIds.length
@@ -234,8 +242,8 @@ export function ScheduleNavigator3D() {
         onRevert: ({ historyIndex, projectedEnd, daysBehind, takenOfferIds }) => {
           setProjectedEndIso(projectedEnd);
           setTakenRoutes(takenOfferIds);
+          setPendingRoute(null);
           setSelectedRoute(null);
-          setRecoveryOpen(false);
           setStatus(
             historyIndex === 0
               ? `Reverted to the original route. Projected finish back to ${formatDay(projectedEnd)} (+${daysBehind}d).`
@@ -279,7 +287,7 @@ export function ScheduleNavigator3D() {
   }, [criticalPathVisible]);
 
   // Real Fullscreen API (not a CSS-only fake) on .stage — canvas + status
-  // bar + legend + filter chips all live under it, so this brings the whole
+  // bar + route panel + filter chips all live under it, so this brings the whole
   // chrome along and leaves the outer app shell/nav behind.
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -320,20 +328,20 @@ export function ScheduleNavigator3D() {
   };
 
   useEffect(() => {
-    if ((!selected && !selectedRoute) || !cardRef.current) return;
+    if (!selected || !cardRef.current) return;
     gsap.fromTo(
       cardRef.current,
       { autoAlpha: 0, y: 8 },
       { autoAlpha: 1, y: 0, duration: 0.28, ease: "expo.out" }
     );
-  }, [selected?.id, selectedRoute?.id, clusterItems.length]);
+  }, [selected?.id, clusterItems.length]);
 
   // Live-track the card's anchor point in the scene each frame while a
   // shard/route is selected, so the card and its leader line stay pinned to
   // the subject as the camera orbits/reframes instead of sitting in a fixed
   // corner disconnected from what was clicked.
   useEffect(() => {
-    if (!selected && !selectedRoute) {
+    if (!selected) {
       setCardAnchor(null);
       return;
     }
@@ -345,9 +353,7 @@ export function ScheduleNavigator3D() {
         raf = requestAnimationFrame(tick);
         return;
       }
-      const local = selectedRoute
-        ? controller.getRouteScreenAnchor(selectedRoute.id)
-        : controller.getShardScreenAnchor();
+      const local = controller.getShardScreenAnchor();
       if (!local) {
         setCardAnchor(null);
       } else {
@@ -362,20 +368,17 @@ export function ScheduleNavigator3D() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [selected?.id, selectedRoute?.id]);
+  }, [selected?.id]);
 
-  // Legend reads top-to-bottom as a short staggered reveal on first render —
-  // motion with a purpose (draws the eye down the key once) rather than a
-  // static list appearing all at once. Visual only; runs once per mount.
+  // Esc closes route detail — the column returns to its resting state.
   useEffect(() => {
-    if (!data || !legendRef.current) return;
-    const items = legendRef.current.querySelectorAll("li");
-    gsap.fromTo(
-      items,
-      { autoAlpha: 0, y: 6 },
-      { autoAlpha: 1, y: 0, duration: 0.32, ease: "power2.out", stagger: 0.06 }
-    );
-  }, [data]);
+    if (!selectedRoute) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedRoute(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedRoute]);
 
   useEffect(() => {
   }, [scrubIso]);
@@ -384,9 +387,25 @@ export function ScheduleNavigator3D() {
   const offersOnOffer = useMemo(() => availableOffers(offers, takenRoutes), [offers, takenRoutes]);
   const routeEffectsNow = useMemo(() => routeEffects(offers, takenRoutes), [offers, takenRoutes]);
 
-  const recommendedRoute = useMemo(
-    () => [...offersOnOffer].sort((a, b) => routeScore(b) - routeScore(a))[0] ?? null,
-    [offersOnOffer]
+  const recommendedRoute = useMemo(() => {
+    if (!data) return null;
+    const scored = offersOnOffer
+      .map((o) => ({
+        o,
+        score: routeScore(o, -routeImpact(data.waypoints, offers, takenRoutes, o).finishDeltaDays),
+      }))
+      .filter((x) => Number.isFinite(x.score))
+      .sort((a, b) => b.score - a.score);
+    return scored[0]?.o ?? null;
+  }, [data, offers, offersOnOffer, takenRoutes]);
+
+  // DERIVED — the finish on the route taken, for the panel's resting view.
+  const routeSchedule = useMemo(
+    () =>
+      data
+        ? scheduleForRoutes(data.waypoints, offers, takenRoutes)
+        : { projected: [], projectedEnd: "", daysBehind: 0 },
+    [data, offers, takenRoutes]
   );
 
   // DERIVED — each milestone's projected completion on the route taken.
@@ -423,14 +442,6 @@ export function ScheduleNavigator3D() {
       milestones: milestoneProjection,
     });
   }, [data, scrubIso, routeEffectsNow, milestoneProjection]);
-
-  // Mirrors journeyController: the planned reference line is only drawn once
-  // something has actually slipped, so the legend must not advertise it
-  // before then.
-  const hasMeasuredSlip = useMemo(
-    () => (data?.waypoints ?? []).some((w) => w.localDelayDays > 0),
-    [data]
-  );
 
   const scrub: ScrubSnapshot | null = useMemo(() => {
     if (!data) return null;
@@ -504,11 +515,34 @@ export function ScheduleNavigator3D() {
     controllerRef.current?.setScrubbing(false);
   };
 
-  const onTakeRoute = () => {
-    if (!selectedRoute) return;
-    setRecoveryOpen(true);
-    setStatus(`Taking route: ${selectedRoute.taskName}…`);
-    controllerRef.current?.takeRoute(selectedRoute.id);
+  /** When the column is stacked under the scene (narrow screens), bring it into view. */
+  function revealSidePanel() {
+    if (typeof window !== "undefined" && window.innerWidth <= 820) {
+      requestAnimationFrame(() =>
+        sidePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      );
+    }
+  }
+
+  const onSelectRoute = (offer: RecoveryOffer) => {
+    setSelected(null);
+    setClusterItems([]);
+    setSelectedRoute(offer);
+    controllerRef.current?.focusRoute(offer.id);
+  };
+
+  const onTakeRoute = (offer: RecoveryOffer) => {
+    setPendingRoute(offer.id);
+    setStatus(`Taking route: ${offer.taskName}…`);
+    if (!controllerRef.current?.takeRoute(offer.id)) {
+      setPendingRoute(null);
+      setStatus("Route not taken — wait for the current route change to finish.");
+    }
+  };
+
+  const onUndoRoute = (offerId: string) => {
+    setStatus("Undoing route…");
+    controllerRef.current?.revertBefore(offerId);
   };
 
   if (error) {
@@ -544,7 +578,6 @@ export function ScheduleNavigator3D() {
   const hasCatchUp = Boolean(
     selected && offersOnOffer.some((o) => o.waypointId === selected.id)
   );
-  const routeTaken = Boolean(selectedRoute && takenRoutes.includes(selectedRoute.id));
 
   const toggleCategory = (category: DelayCategory) => {
     setActiveCategories((current) =>
@@ -776,7 +809,6 @@ export function ScheduleNavigator3D() {
                     setSelected(m.waypoint);
                     setSelectedRoute(null);
                     setClusterItems([]);
-                    setRecoveryOpen(false);
                     controllerRef.current?.setScrubIso(m.waypoint.plannedEnd);
                   }}
                   aria-label={`Delay: ${m.waypoint.taskNameEn}, +${m.waypoint.localDelayDays} days`}
@@ -796,7 +828,6 @@ export function ScheduleNavigator3D() {
                     setSelected(m.waypoint);
                     setSelectedRoute(null);
                     setClusterItems([]);
-                    setRecoveryOpen(false);
                     controllerRef.current?.setScrubIso(m.waypoint.plannedEnd);
                   }}
                   aria-label={`Predicted risk: ${m.waypoint.taskNameEn}, +${m.waypoint.forecastRisk?.predictedDelayDays} days`}
@@ -822,7 +853,7 @@ export function ScheduleNavigator3D() {
         </div>
       </div>
 
-      {(selectedRoute || selected) && cardAnchor && (() => {
+      {selected && cardAnchor && (() => {
         const { left, top } = clampCardPosition(cardAnchor.x, cardAnchor.y);
         const cardCenterY = top + 40;
         const leaderTargetX = cardAnchor.x < left ? left : left + FLOATING_CARD_WIDTH;
@@ -860,89 +891,7 @@ export function ScheduleNavigator3D() {
               aria-live="polite"
               ref={cardRef}
             >
-          {selectedRoute ? (
-            <div className={styles.card}>
-              <div className={styles.cardHead}>
-                <div>
-                  <h3 className={styles.cardTitle}>Alternate route</h3>
-                  <p className={styles.cardMeta}>
-                    {selectedRoute.depth > 1 ? `Level ${selectedRoute.depth} · ` : ""}
-                    {selectedRoute.taskName}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className={styles.closeBtn}
-                  aria-label="Close"
-                  onClick={() => {
-                    setSelectedRoute(null);
-                    setRecoveryOpen(false);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              {recommendedRoute?.id === selectedRoute.id && (
-                <div className={styles.recommendationBadge}>
-                  Computed suggestion · DERIVED
-                  <span>
-                    Recommended: recovers {selectedRoute.daysRecovered}d at the lowest computed cost burden.
-                  </span>
-                </div>
-              )}
-              {recommendedRoute && recommendedRoute.id !== selectedRoute.id && (
-                <div className={styles.recommendationNote}>
-                  Computed suggestion · DERIVED: <strong>{recommendedRoute.taskName}</strong> recovers {recommendedRoute.daysRecovered}d with the strongest recovery-to-cost score.
-                </div>
-              )}
-
-              {(
-                <>
-                  <div className={styles.routeCompare}>
-                    <div className={styles.routeOption}>
-                      <p className={styles.routeOptionLabel}>Current path</p>
-                      <p className={styles.routeOptionMeta}>
-                        {routeTaken ? "Superseded — see ghosted line" : "No change · status quo"}
-                      </p>
-                    </div>
-                    <span className={styles.routeOptionDivider}>vs</span>
-                    <div className={`${styles.routeOption} ${styles.routeOptionSuggested}`}>
-                      <p className={styles.routeOptionLabel}>
-                        {routeTaken ? "Route taken" : "Suggested route"}
-                      </p>
-                      <p className={styles.routeOptionMeta}>
-                        −{selectedRoute.daysRecovered}d ·{" "}
-                        {selectedRoute.resourceCost}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className={styles.actions}>
-                    <button
-                      type="button"
-                      className={styles.primaryBtn}
-                      onClick={onTakeRoute}
-                      disabled={routeTaken}
-                    >
-                      {routeTaken
-                        ? "Route taken ✓"
-                        : `Take this route (−${selectedRoute.daysRecovered}d)`}
-                    </button>
-                  </div>
-
-                  {recoveryOpen && (
-                    <div className={styles.recovery}>
-                      <p className={styles.fieldLabel}>
-                        Recovery
-                        <ProvenanceBadge tag={selectedRoute.provenance} compact />
-                      </p>
-                      <p>{selectedRoute.summary}</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          ) : selected ? (
+          {selected ? (
             <div className={styles.card}>
               <div className={styles.cardHead}>
                 <div>
@@ -967,7 +916,6 @@ export function ScheduleNavigator3D() {
                   onClick={() => {
                     setSelected(null);
                     setClusterItems([]);
-                    setRecoveryOpen(false);
                   }}
                 >
                   ×
@@ -993,7 +941,6 @@ export function ScheduleNavigator3D() {
                           }
                           onClick={() => {
                             setSelected(w);
-                            setRecoveryOpen(false);
                           }}
                         >
                           <span>+{w.localDelayDays}d</span>
@@ -1045,8 +992,8 @@ export function ScheduleNavigator3D() {
 
               {hasCatchUp && (
                 <p className={styles.placeholderNote}>
-                  An alternate route exists for this delay — click its dashed line
-                  on the path to view cost and take it.
+                  An alternate route is on offer for this delay — it&apos;s listed under
+                  Your route in the side panel, and drawn as the pale line lifted above the path.
                 </p>
               )}
             </div>
@@ -1056,63 +1003,35 @@ export function ScheduleNavigator3D() {
         );
       })()}
 
-      <aside className={styles.sidePanel} aria-label="Legend">
-        <div className={styles.legendSection} ref={legendRef}>
-          <p className={styles.legendTitle}>Legend</p>
-          <ul className={styles.legendList}>
-            {hasMeasuredSlip ? (
-              <li>
-                <i className={styles.swatchPlanned} /> Planned reference
-              </li>
-            ) : null}
-            <li>
-              <i className={styles.swatchActual} /> Actual to date
-            </li>
-            <li>
-              <i className={styles.swatchProjected} /> Projected (at risk)
-            </li>
-            <li>
-              <i className={styles.swatchAlternate} /> Alternate route (click to view)
-            </li>
-            <li>
-              <i className={styles.swatchTaken} /> Route taken
-            </li>
-            <li>
-              <i className={styles.swatchGhost} /> Ghosted (superseded route)
-            </li>
-            <li>
-              <i className={styles.swatchToday} /> Today
-            </li>
-            <li>
-              <i className={styles.swatchShard} /> Delay indicator
-            </li>
-            <li>
-              <i className={styles.swatchMilestoneDelay} /> Milestone running late
-            </li>
-            <li>
-              <i className={styles.swatchForecast} /> Predicted risk
-            </li>
-            <li>
-              <i className={styles.swatchCritical} /> Critical path driver · zero float
-            </li>
-            <li>
-              <i className={styles.swatchSlack} /> Slack segment · DERIVED
-            </li>
-            <li>
-              <i className={styles.swatchMilestone} /> Structural milestone
-            </li>
-          </ul>
-        </div>
+      <aside className={styles.sidePanel} aria-label="Route panel" ref={sidePanelRef}>
         {/* Tour narration first: it's the thing being read while the tour
             runs, so the alerts list must not push it out of view. */}
         <DemoTourPanel />
-        <MilestoneAlertsPanel
-          alerts={data?.milestoneAlerts}
-          projections={milestoneProjection}
-          onFocus={(alert) =>
-            controllerRef.current?.focusDateSpan(alert.plannedStart, alert.plannedEnd)
-          }
+        {/* One main slot: route detail replaces the resting view (your route +
+            milestone alerts) rather than stacking on top of it. */}
+        <RoutePanel
+          offers={offers}
+          takenIds={takenRoutes}
+          waypoints={data.waypoints}
+          projectedEnd={routeSchedule.projectedEnd || data.timeline.projectedEnd}
+          daysBehind={routeSchedule.daysBehind}
+          selected={selectedRoute}
+          pendingId={pendingRoute}
+          recommendedId={recommendedRoute?.id ?? null}
+          onSelect={onSelectRoute}
+          onBack={() => setSelectedRoute(null)}
+          onTake={onTakeRoute}
+          onUndo={onUndoRoute}
         />
+        {selectedRoute ? null : (
+          <MilestoneAlertsPanel
+            alerts={data.milestoneAlerts}
+            projections={milestoneProjection}
+            onFocus={(alert) =>
+              controllerRef.current?.focusDateSpan(alert.plannedStart, alert.plannedEnd)
+            }
+          />
+        )}
       </aside>
       </div>
     </div>

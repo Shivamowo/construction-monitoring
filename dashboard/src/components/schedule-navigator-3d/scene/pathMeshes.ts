@@ -169,7 +169,7 @@ export function createPlannedTube(
   /* Recessive graphite reference line. Was 55% opaque, which over a near-
      white scene composited to roughly rgb(144,148,152) and then lifted
      further by tone mapping — it read as a pale, unexplained streak rather
-     than the deliberate reference the legend promises. Opaque and a touch
+     than a deliberate reference line. Opaque and a touch
      darker: still quieter than the live route, but legible as a line. */
   // Low environment reflection: the room lighting otherwise lifts graphite
   // to the same lightness as the taken blue, and lightness is what keeps

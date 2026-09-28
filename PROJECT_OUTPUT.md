@@ -922,3 +922,46 @@ Rendered: planned `#4e5154` · actual `#64c2a5` · projected `#517cb9` · taken 
 - **The one failing pair, projected–superseded (11.5 normal), is never on screen together.** A ghost exists only once a route is taken, and taking a route replaces the projected tube with the taken one.
 
 **Verified:** `tsc --noEmit` clean, no new ESLint findings (diffed against HEAD). t0/t1/t2/Schependomlaan load with zero page/console errors. t0 reads as a single dashed-blue plan with amber risk markers. Schependomlaan still shows teal actual, graphite planned and its two pale FORGED offers.
+
+---
+### 2026-09-28 (cont.) — Recovery detail in the right column; legend removed (Task 2 of 3)
+
+**Column design: one main slot, no pile.** From top:
+1. **Tour narration**, only while the tour runs (it's what is being read, so nothing pushes it down).
+2. **One main slot** (`RoutePanel.tsx`):
+   - **Resting ("Your route", DERIVED):**
+     - the projected finish on the route taken, with +Nd vs plan;
+     - the chain of routes taken, each with Undo (undoes it and everything after it; same code path as clicking its ghost);
+     - the routes on offer from here, each with its derived finish effect, clickable.
+   - **Route selected:** that route's full detail *replaces* the resting view, and the milestone alerts hide while it's open. Back and Esc return to rest.
+3. **Milestone alerts**, beneath the resting view.
+
+Selecting a route from the list flies the camera to it; clicking a route line in 3D opens the same detail. On narrow screens a 3D click scrolls the stacked column into view.
+
+**Detail content.** Each item is tagged with its provenance:
+- **Finish change:** before → after, DERIVED, with a derived Δ badge.
+- **What the plan claims:** days recovered, REAL/FORGED as tagged, including "of Nd lost at X" (claw-back) or "off X's duration" (compress).
+- **When the two differ, it says so.** Crane route: plan −3d, finish −1d, and the note "only 1 of the 3 days reach the finish; the rest are absorbed downstream". Design Review: ±0d, "the finish doesn't move".
+- **What it does:** the summary, verbatim.
+- **What it costs:** crew, plant and sequence, one per line.
+- **Tasks it moves:** each with before → after and Δ, DERIVED.
+- **Actions:** Take, or "Route taken ✓" plus Undo. Nested routes also say which taken route put them on offer.
+
+**Suggestion fixed.** The "suggested" route was ranked by the plan's *claimed* days, so it recommended Design Review (worth 0 days to the finish under CPM). It now ranks by the derived finish gain per cost burden, and a route that doesn't move the finish is never suggested.
+
+**Legend removed**, JSX and CSS. What replaces it:
+- Task 3's multi-channel line system.
+- Direct labels: "Actual to date" on the teal line, "<Milestone> · Nd late" on each red sleeve.
+- The existing end labels (Planned end / Projected end / Today).
+- "Alternate route (· level N)" and "Superseded · <finish>" tags.
+
+The floating route popover is gone; delay/risk shard cards stay as popovers, since the brief moves only route detail. CSS orphaned by the popover was removed. Other dead classes that predate this work (`scrub*`, `stat*`, `statusBar` …) were left alone. The tour copy was updated: its Phase 3 line claimed a superseded route is drawn on t2, which was never true (t2 is a separate snapshot).
+
+**Verified** (headless Chrome, driving the panel like a user):
+- **t1 chain:** select DD → detail (4 Feb → 30 Jan, −5d, plan −5d of 6d) → take → Back → resting shows the chain [DD] and offers [DR ±0d, crane −1d level 2] → select crane → detail (level 2, "only on offer because you took Detailed Design", 30 Jan → 29 Jan) → take → Esc → resting "29 Jan · On plan".
+- **Undo:** Undo crane → 30 Jan with the crane re-offered; Undo DD → 4 Feb.
+- **Ghost revert:** reverting to ghost 0 from depth 2 works.
+- **Legend:** `legend: false` on every page.
+- **Other projects:** t0 and t2 read "This schedule ships no recovery routes". Schependomlaan's FORGED route selects, takes and reverts through the panel.
+- **Layout:** at 420 px the column stacks under the scene with detail and resting views legible. The demo tour renders narration above Your route and alerts.
+- **Checks:** zero page/console errors throughout; `tsc --noEmit` clean; ESLint on touched files identical to HEAD (diffed).
