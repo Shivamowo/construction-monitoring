@@ -11,6 +11,11 @@ import type {
   RecoveryPlan,
   RecoveryPlanCatchUp,
 } from "@shared/schema/types";
+import {
+  computeProjectedSchedule,
+  projectedFinish,
+  type ScheduleNode,
+} from "./cpm";
 
 export type DelaySeverity = "none" | "mild" | "severe";
 export type DelayCategory = "customs" | "weather" | "labor" | "other";
@@ -83,12 +88,20 @@ export interface NavigatorWaypoint {
   plannedEnd: string;
   /** Max positive deviationDays in this task group (days). */
   localDelayDays: number;
-  /** Cascaded projected end (ISO date) after cumulative shift + local delay. */
+  /** DERIVED — projected end (ISO date) from the forward-pass re-level (cpm.ts). */
   projectedEnd: string;
-  /** Cumulative shift applied *before* this waypoint's local delay (days). */
+  /** DERIVED — shift inherited from predecessors via dependency links (days). */
   cascadeShiftBefore: number;
-  /** Cumulative shift after this waypoint (days). */
+  /** DERIVED — total shift of this waypoint's projected end vs plan (days). */
   cascadeShiftAfter: number;
+  /**
+   * Member tasks as forward-pass nodes: planned dates + predecessor links
+   * REAL from the source schedule, measuredSlipDays REAL from as-built
+   * records. Lets the client re-level after a recovery. Link-free tasks
+   * sharing a slip value are collapsed to the latest-ending one (lossless
+   * for the waypoint's projected end). Absent on the dummy scenario.
+   */
+  scheduleNodes?: ScheduleNode[];
   counts: {
     onTime: number;
     behind: number;
@@ -174,18 +187,8 @@ export interface ScheduleNavigatorPayload {
   dataProvenance?: string;
 }
 
-function parseDate(iso: string): Date {
-  return new Date(`${iso}T00:00:00Z`);
-}
-
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
-}
-
-function addDays(iso: string, days: number): string {
-  const d = parseDate(iso);
-  d.setUTCDate(d.getUTCDate() + days);
-  return formatDate(d);
 }
 
 function severityForDelay(days: number): DelaySeverity {
@@ -312,6 +315,8 @@ interface TaskGroup {
   isCriticalPath: boolean;
   /** Least float across the group's tasks (the binding constraint); null if source never computed it. */
   totalSlackDays: number | null;
+  /** Member tasks as forward-pass nodes (see cpm.ts). */
+  nodes: ScheduleNode[];
 }
 
 /**
@@ -403,6 +408,31 @@ function computeMilestoneAlerts(
   });
 }
 
+/**
+ * Link-free tasks affect only their own waypoint's projected end, which is
+ * the max over members of plannedEnd + slip. For each distinct slip value
+ * only the latest-ending task can be that max, so the rest are dropped —
+ * lossless, and keeps a many-task, link-free schedule (Schependomlaan) from
+ * shipping thousands of nodes.
+ */
+function collapseLinkFreeNodes(
+  nodes: ScheduleNode[],
+  linkedTaskIds: Set<string>
+): ScheduleNode[] {
+  const kept: ScheduleNode[] = [];
+  const latestBySlip = new Map<string, ScheduleNode>();
+  for (const n of nodes) {
+    if (linkedTaskIds.has(n.taskId)) {
+      kept.push(n);
+      continue;
+    }
+    const slipKey = String(n.measuredSlipDays ?? "none");
+    const best = latestBySlip.get(slipKey);
+    if (!best || n.plannedEnd > best.plannedEnd) latestBySlip.set(slipKey, n);
+  }
+  return [...kept, ...latestBySlip.values()];
+}
+
 export function buildScheduleNavigatorPayload(
   schedule: PlannedTask[],
   fusion: FusionOutput[],
@@ -450,6 +480,7 @@ export function buildScheduleNavigatorPayload(
         componentIds: new Set(),
         isCriticalPath: false,
         totalSlackDays: null,
+        nodes: [],
       };
       groups.set(key, group);
     }
@@ -462,6 +493,22 @@ export function buildScheduleNavigatorPayload(
     // String(...) so this matches the string-keyed fusionBy/deviationBy maps
     // above even when the real taskId comes through as a JS number.
     group.componentIds.add(String(task.componentId ?? task.taskId));
+    const measured = deviationBy.get(String(task.componentId ?? task.taskId))?.deviationDays;
+    group.nodes.push({
+      taskId: String(task.taskId),
+      plannedStart: task.plannedStart,
+      plannedEnd: task.plannedEnd,
+      ...(task.predecessors?.length
+        ? {
+            predecessors: task.predecessors.map((l) => ({
+              taskId: String(l.taskId),
+              type: l.type,
+              lagDays: l.lagDays ?? 0,
+            })),
+          }
+        : {}),
+      ...(measured != null ? { measuredSlipDays: measured } : {}),
+    });
     group.isCriticalPath = group.isCriticalPath || Boolean(task.isCriticalPath);
     if (task.totalSlackDays != null) {
       group.totalSlackDays =
@@ -485,6 +532,14 @@ export function buildScheduleNavigatorPayload(
     NavigatorWaypoint,
     "projectedEnd" | "cascadeShiftBefore" | "cascadeShiftAfter" | "severity"
   > & { localDelayDays: number };
+
+  // Tasks that some other task depends on — these must stay individual
+  // nodes for the forward pass; everything link-free can be collapsed.
+  const linkedTaskIds = new Set<string>();
+  for (const task of schedule) {
+    if (task.predecessors?.length) linkedTaskIds.add(String(task.taskId));
+    for (const l of task.predecessors ?? []) linkedTaskIds.add(String(l.taskId));
+  }
 
   const drafts: Draft[] = [...groups.entries()].map(([key, group]) => {
     group.starts.sort();
@@ -555,6 +610,7 @@ export function buildScheduleNavigatorPayload(
       plannedStart: group.starts[0],
       plannedEnd: group.ends[group.ends.length - 1],
       localDelayDays,
+      scheduleNodes: collapseLinkFreeNodes(group.nodes, linkedTaskIds),
       counts: { onTime, behind, ahead, notScheduled, delayedComponents },
       deviationDaysSource,
       forecastRisk,
@@ -611,15 +667,15 @@ export function buildScheduleNavigatorPayload(
     if (lastKey) milestoneWaypointKeys.add(lastKey);
   }
 
-  let cumulativeShift = 0;
+  const projection = computeProjectedSchedule(drafts);
+
   let cumulativePlannedRunning = 0;
   const waypoints: NavigatorWaypoint[] = drafts.map((draft, i) => {
-    const cascadeShiftBefore = cumulativeShift;
-    const projectedEnd = addDays(
-      draft.plannedEnd,
-      cascadeShiftBefore + draft.localDelayDays
-    );
-    cumulativeShift += draft.localDelayDays;
+    const {
+      projectedEnd,
+      cascadeBefore: cascadeShiftBefore,
+      cascadeAfter: cascadeShiftAfter,
+    } = projection[i];
 
     const priorCumulativePlanned = cumulativePlannedRunning;
     const share = (draft.componentCount / totalComponents) * 100;
@@ -667,7 +723,7 @@ export function buildScheduleNavigatorPayload(
       ...draft,
       projectedEnd,
       cascadeShiftBefore,
-      cascadeShiftAfter: cumulativeShift,
+      cascadeShiftAfter,
       // Color by local delay introduced at this waypoint (cascade still shifts X).
       // Using cascadeShiftBefore+local would paint nearly the entire route "severe"
       // after early delays accumulate — accurate to that formula, but misleading for
@@ -682,9 +738,8 @@ export function buildScheduleNavigatorPayload(
     };
   });
 
-  const projectedEnds = waypoints.map((w) => w.projectedEnd).sort();
   const projectedEnd =
-    projectedEnds[projectedEnds.length - 1] ?? metadata.overallTimeline.end;
+    projectedFinish(drafts, projection).projectedEnd || metadata.overallTimeline.end;
 
   const milestoneAlerts = computeMilestoneAlerts(milestones, schedule, deviationBy);
 
@@ -707,10 +762,12 @@ export function buildScheduleNavigatorPayload(
     provenance: {
       deviationDays: "FORGED",
       volumetricDeviationPct: "FORGED",
-      cascadeModel: "illustrative",
+      cascadeModel: "cpm-forward-pass",
     },
     footnotes: [
-      "Cascading delay is illustrative and not dependency-graph-aware — real task dependencies are not in the dataset. Each waypoint’s positive deviationDays shifts all subsequent projected milestones forward on the time axis.",
+      linkedTaskIds.size > 0
+        ? "Projected dates are DERIVED by a forward-pass critical-path re-level over the source schedule's own predecessor links (FS/SS/FF/SF + lag). Tasks with an as-built record keep their measured finish; every other task starts at the later of its planned start and its predecessor constraints and runs its planned duration. Planned start is a floor — nothing is projected earlier than the plan of record."
+        : "Projected dates are DERIVED, but this source schedule carries no predecessor links, so delay does NOT propagate: each waypoint's projected end is its own planned end plus its own measured slip. No cascade is claimed where the dependency data doesn't exist.",
       "Projected line color reflects local delay introduced at each waypoint (FORGED deviationDays), not cumulative cascade. Cascade still stretches projected dates rightward.",
       "deviationDays values shown on this view are tagged FORGED (deviationDaysSource). volumetricDeviationPct is FORGED wherever displayed.",
       "1,203 components with deviationFlag not_scheduled are excluded from the projected route and listed separately.",

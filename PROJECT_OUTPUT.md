@@ -757,3 +757,27 @@ User asked what the white line in Phase 1 was and what it was for. Fair question
 This also improves the demo narrative: Phase 1 is now a single clean route, and the second line *appears* in Phase 2 with its meaning self-evident — the gap between planned and projected is the delay.
 
 **Verified:** `tsc --noEmit` clean, zero page errors. t0 legend has no "Planned reference" row and shows one route; t1 has the row and renders three visually distinct families — dark graphite planned, two light-grey alternates, orange projected.
+
+---
+### 2026-09-28 — CPM forward-pass re-level replaces the additive cascade (Task A)
+
+**What changed.** New `dashboard/src/lib/schedule-navigator/cpm.ts`: `computeProjectedSchedule(waypoints, recoveries)` + `projectedFinish()`. Each task starts at the later of its planned start and every predecessor constraint (FS: pred finish+lag; SS: pred start+lag; FF: pred finish+lag−own duration; SF: pred start+lag−own duration), then runs its planned duration. A task with an as-built record keeps its measured finish (planned finish + deviationDays). Planned start is a floor: nothing projects earlier than the plan of record. `recoveries[waypointId]` still feeds in: it pulls that waypoint's measured slip in (clamped to the slip), which is the finish its successors see. The same module runs server-side (`aggregate.ts` → payload) and client-side (taking a route), so the two can't drift.
+
+Each waypoint now carries `scheduleNodes` (member tasks: REAL planned dates and links, REAL `measuredSlipDays`). Link-free tasks sharing a slip value are collapsed to the latest-ending one. That's lossless for the waypoint's projected end and keeps Schependomlaan's payload at 54 KB instead of ~280 KB. Projected dates, `cascadeShiftBefore` (shift inherited through links) and `cascadeShiftAfter` (total finish shift) are DERIVED. `provenance.cascadeModel` is now `"cpm-forward-pass"`, and the "not dependency-graph-aware" footnote is replaced. Projects with no links at all (Schependomlaan) get a footnote saying delay does NOT propagate there, so no cascade is claimed without dependency data. `computeCascadedSchedule` is removed. Every caller that read the *last* waypoint as the project finish now uses `projectedFinish()` (the max), because under real dependencies the last-planned waypoint need not finish last.
+
+**Acceptance results, with numbers. #1 and #2 did not pass as written, and I didn't tune the engine to force them.**
+
+| Check | Result |
+|---|---|
+| 1. t1 + Detailed Design route moves downstream + finish | Downstream moves: Site Clearance 16→11 Nov, Foundations/Cable Trenches 11→6 Dec, Cabling 31→26 Dec, Transformer Erection 5 Jan→31 Dec. **Finish does not move: 29 Jan both ways.** |
+| 2. t1 + `recovery-plan.json` revisions ≈ t2 (3 Feb) | **22 Jan 2027.** 12 days earlier than 3 Feb. The t2 payload itself now also projects 22 Jan. The old 3 Feb was t2's re-baselined 22 Jan plus the additive model's 2+6+4 = 12 days of already-absorbed history, counted again. |
+| 3. t0 projected == planned | Pass: 29 Jan == 29 Jan, every waypoint shift 0. |
+| 4. Schependomlaan renders | Pass: zero page/console errors (headless Chrome). Projected finish is now 15 Oct 2015 (was 19 Mar 2016). The source has no predecessor links, so nothing propagates. |
+
+**Why t1's finish no longer moves: a source-data inconsistency, not an engine bug.** The authored MSPDI has Protection & Control (UID 16) linked **FF+5** from Transformer Erection (UID 14), but dates it 4–14 Jan: its *start* is Erection's finish + 5, i.e. the dates were authored as if the link were FS+5. Under real FF semantics P&C only has to finish by 4 Jan, so it has ~10 days of float. The file's own TotalSlack=0 on both tasks says that float isn't there. t1's 6-day slip lands Erection at 5 Jan, and P&C's planned 4 Jan start and FF bound (10 Jan) both still allow a 14 Jan finish, so the finish holds. If that link is corrected to FS+5 (which matches the file's own dates and slack), the same engine gives **t1 = 4 Feb 2027** (6 days late, matching "Detailed Design finished 6 days late"), and t1 + the DD route gives **30 Jan**. That's a change to authored demo data (`_make-substation-snapshots.py` base file), so I left it for Shivam to decide.
+
+**Hard-coded dates updated to what the engine now shows:** `lib/projects.ts` start-page facts (t1 29 Jan, t2 22 Jan), `lib/demoTour.ts` Phase 3 line (29 Jan → 22 Jan, still seven days), and the HANDOFF verification table and limitation #1.
+
+**Verified:** `npx tsc --noEmit` clean. API payload checked directly for t0/t1/t2/schependomlaan. The route-taking math was checked by running the shipped `cpm.ts` against the t1 payload. All four URLs load in headless Chrome with zero page or console errors, and t1's footer reads "Projected Finish 29 Jan 2027". I did not click-drive "Take this route" in a browser (no interactive browser available); the client path calls the same function checked above.
+
+**Deliberately NOT done:** didn't change the FF+5 link or any authored data. The Phase 2 narrative ("it has slipped… the whole downstream cascade moves with it") is still true for downstream waypoints but not for the finish; left for a product call once the link question is settled. Didn't touch `ingest-recovery-plan.ts` (Task D) or line endings.

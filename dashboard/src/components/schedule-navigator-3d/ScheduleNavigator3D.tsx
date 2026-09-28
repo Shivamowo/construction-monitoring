@@ -16,10 +16,11 @@ import {
   type ScrubSnapshot,
 } from "@/lib/schedule-navigator/scrubSnapshot";
 import { buildNextUp } from "@/lib/schedule-navigator/nextUp";
+import { recoveryDaysForWaypoint } from "./scene/pathFromWaypoints";
 import {
-  computeCascadedSchedule,
-  recoveryDaysForWaypoint,
-} from "./scene/pathFromWaypoints";
+  computeProjectedSchedule,
+  projectedFinish,
+} from "@/lib/schedule-navigator/cpm";
 import { NextUpBanner } from "./NextUpBanner";
 import { DemoTourPanel } from "@/components/DemoTour";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
@@ -406,7 +407,7 @@ export function ScheduleNavigator3D() {
     for (const w of data.waypoints) {
       if (takenRoutes.has(w.id)) recoveries[w.id] = recoveryDaysForWaypoint(w);
     }
-    const cascaded = computeCascadedSchedule(data.waypoints, recoveries);
+    const cascaded = computeProjectedSchedule(data.waypoints, recoveries);
     const byWaypointId: Record<string, { projectedEnd: string; residualLocal: number }> = {};
     data.waypoints.forEach((w, i) => {
       byWaypointId[w.id] = {
@@ -418,7 +419,7 @@ export function ScheduleNavigator3D() {
     return buildNextUp(data, iso, {
       byWaypointId,
       projectedEnd:
-        cascaded[cascaded.length - 1]?.projectedEnd ?? data.timeline.projectedEnd,
+        projectedFinish(data.waypoints, cascaded).projectedEnd || data.timeline.projectedEnd,
     });
   }, [data, scrubIso, takenRoutes]);
 

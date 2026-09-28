@@ -11,6 +11,11 @@ import {
   pctToY,
   type TimelineScale,
 } from "./timelineAxis";
+import {
+  computeProjectedSchedule,
+  projectedFinish,
+  type ProjectedWaypoint,
+} from "@/lib/schedule-navigator/cpm";
 
 /** A waypoint with local delay — drives shard placement. */
 export interface DelayShardSpec {
@@ -202,38 +207,6 @@ export function truncateAtFullCompletion(
 }
 
 /**
- * Recompute cascaded projected ends after applying optional recoveries.
- * `recoveries[id] = daysRecovered` reduces that waypoint's local delay.
- */
-export function computeCascadedSchedule(
-  waypoints: NavigatorWaypoint[],
-  recoveries: Record<string, number> = {}
-): {
-  residualLocal: number;
-  cascadeBefore: number;
-  cascadeAfter: number;
-  projectedEnd: string;
-}[] {
-  let cascade = 0;
-  return waypoints.map((w) => {
-    const recovered = Math.min(
-      Math.max(0, recoveries[w.id] ?? 0),
-      Math.max(0, w.localDelayDays)
-    );
-    const residualLocal = Math.max(0, w.localDelayDays - recovered);
-    const cascadeBefore = cascade;
-    const cascadeAfter = cascadeBefore + residualLocal;
-    cascade = cascadeAfter;
-    return {
-      residualLocal,
-      cascadeBefore,
-      cascadeAfter,
-      projectedEnd: addDays(w.plannedEnd, cascadeBefore + residualLocal),
-    };
-  });
-}
-
-/**
  * Identify schedule drivers by measuring each waypoint's remaining contribution
  * to the current projected finish. A zero-impact waypoint has float; a positive
  * impact is on the current critical path. This remains valid after recoveries.
@@ -242,8 +215,8 @@ export function computeCriticalPath(
   waypoints: NavigatorWaypoint[],
   recoveries: Record<string, number> = {}
 ): Array<Pick<CriticalWaypointSpec, "waypoint" | "waypointIndex" | "endImpactDays" | "floatDays" | "isCritical">> {
-  const current = computeCascadedSchedule(waypoints, recoveries);
-  const currentEnd = current[current.length - 1]?.projectedEnd;
+  const current = computeProjectedSchedule(waypoints, recoveries);
+  const currentEnd = projectedFinish(waypoints, current).projectedEnd;
   if (!currentEnd) return [];
 
   return current.map((entry, waypointIndex) => {
@@ -266,11 +239,11 @@ export function computeCriticalPath(
       : 0;
     const unresolvedActual = actualResidual > 0 && !waypoint.catchUpPlan;
     const isCritical = unresolvedActual || forecastResidual > 0;
-    const withoutResidual = computeCascadedSchedule(waypoints, {
+    const withoutResidual = computeProjectedSchedule(waypoints, {
       ...recoveries,
       [waypoint.id]: waypoint.localDelayDays,
     });
-    const alternateEnd = withoutResidual[withoutResidual.length - 1]?.projectedEnd ?? currentEnd;
+    const alternateEnd = projectedFinish(waypoints, withoutResidual).projectedEnd || currentEnd;
     const cascadeImpactDays = Math.max(
       0,
       Math.round((parseTime(currentEnd) - parseTime(alternateEnd)) / 86400000)
@@ -391,7 +364,7 @@ export function rebuildProjectedCurve(
 
 export function buildJourneyPoints(
   waypoints: NavigatorWaypoint[],
-  cascaded: ReturnType<typeof computeCascadedSchedule>,
+  cascaded: ProjectedWaypoint[],
   scale: TimelineScale
 ): THREE.Vector3[] {
   const total = waypoints.length;
@@ -522,7 +495,7 @@ export function buildCatchUpProjectedControls(
       xSpan: X_SPAN,
     });
 
-  const cascaded = computeCascadedSchedule(waypoints, recoveries);
+  const cascaded = computeProjectedSchedule(waypoints, recoveries);
   const journey = buildJourneyPoints(waypoints, cascaded, scale);
   const sample = sampleJourneyAtDate(journey, scale, todayIso);
 

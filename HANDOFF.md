@@ -65,8 +65,8 @@ the troubleshooting table at the bottom.
 | URL | What you should see |
 |---|---|
 | `localhost:3001/?project=substation-t0` | One clean orange route. Projected finish **29 Jan 2027**. No delay markers. |
-| `localhost:3001/?project=substation-t1` | Green actual + amber projected + graphite planned + two grey alternates. Finish **10 Feb 2027**. |
-| `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **3 Feb 2027**. |
+| `localhost:3001/?project=substation-t1` | Green actual + amber projected + graphite planned + two grey alternates. Finish **29 Jan 2027** (CPM re-level — see PROJECT_OUTPUT.md 28 Sep 2026; was 10 Feb under the old additive cascade). |
+| `localhost:3001/?project=substation-t2` | Same history, recovered forward plan. Finish **22 Jan 2027** (was 3 Feb under the old additive cascade). |
 
 There is also a **Run demo** button in the header that walks all three phases with
 narration. Fastest way to understand the product.
@@ -190,11 +190,11 @@ If you add a field, tag it. If you compute something, say so.
 
 Honest list. None of these are hidden bugs — they are documented decisions.
 
-1. **The cascade is additive, not a real CPM re-level.** Delay propagates as a running
-   sum of each waypoint's own delay; it does not recompute downstream dates from
-   dependencies and durations. This is the single biggest piece of remaining work.
-   Consequence: a recovery only moves the project finish because the *source file*
-   re-baselines the forward dates, not because the engine re-levels.
+1. **The cascade is now a CPM forward pass** (`dashboard/src/lib/schedule-navigator/cpm.ts`,
+   28 Sep 2026). It honours the source schedule's FS/SS/FF/SF links and lags. Open issue:
+   the authored substation plan's FF+5 link from Transformer Erection to Protection &
+   Control leaves ~10 days of float the file's own TotalSlack=0 says isn't there, so
+   t1's slip is absorbed before the finish. See `PROJECT_OUTPUT.md` for the numbers.
 2. **Recovery plans are self-authored.** The external tool meant to supply them has no
    export format yet. `shared/scripts/ingest-recovery-plan.ts` has an `--inspect` mode
    ready to receive a real sample and is deliberately left inert until one exists.

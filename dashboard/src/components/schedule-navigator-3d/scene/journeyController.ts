@@ -14,11 +14,14 @@ import type {
   ScheduleNavigatorPayload,
 } from "@/lib/schedule-navigator/aggregate";
 import {
+  computeProjectedSchedule,
+  projectedFinish,
+} from "@/lib/schedule-navigator/cpm";
+import {
   buildCatchUpProjectedControls,
   computeCriticalPath,
   buildNavigatorPathModel,
   buildRoutePreviewPoints,
-  computeCascadedSchedule,
   curvePointAtX,
   rebuildProjectedCurve,
   recoveryDaysForWaypoint,
@@ -462,7 +465,7 @@ export function createJourneyController(
 
   function refreshCriticalMarkers() {
     const critical = computeCriticalPath(model.waypoints, appliedRecoveries);
-    const cascaded = computeCascadedSchedule(model.waypoints, appliedRecoveries);
+    const cascaded = computeProjectedSchedule(model.waypoints, appliedRecoveries);
     model.criticalPath = critical.map((entry) => {
       const point = curvePointAtX(
         model.projectedCurve,
@@ -1497,15 +1500,17 @@ export function createJourneyController(
     const wp = model.waypoints.find((w) => w.id === waypointId);
     const daysRecovered = recoveryDaysForWaypoint(wp);
     if (!wp || daysRecovered <= 0) {
-      const cascadedCurrent = computeCascadedSchedule(model.waypoints, appliedRecoveries);
-      const lastCurrent = cascadedCurrent[cascadedCurrent.length - 1];
+      const lastCurrent = projectedFinish(
+        model.waypoints,
+        computeProjectedSchedule(model.waypoints, appliedRecoveries)
+      );
       callbacks.onCatchUpComplete?.({
         waypointId,
         daysRecovered: 0,
         daysLost: wp?.catchUpPlan?.daysLost ?? 0,
         appliedCount: Object.keys(appliedRecoveries).length,
         projectedEnd: lastCurrent.projectedEnd,
-        daysBehind: lastCurrent.cascadeAfter,
+        daysBehind: lastCurrent.daysBehind,
       });
       return;
     }
@@ -1534,10 +1539,10 @@ export function createJourneyController(
     // Compound with any previously applied plans (steel unresolved stays full).
     appliedRecoveries[waypointId] = daysRecovered;
 
-    const cascaded = computeCascadedSchedule(model.waypoints, appliedRecoveries);
-    const lastCascaded = cascaded[cascaded.length - 1];
+    const cascaded = computeProjectedSchedule(model.waypoints, appliedRecoveries);
+    const lastCascaded = projectedFinish(model.waypoints, cascaded);
     const newProjectedEndIso = lastCascaded.projectedEnd;
-    const newDaysBehind = lastCascaded.cascadeAfter;
+    const newDaysBehind = lastCascaded.daysBehind;
     model.timeline.projectedEnd = newProjectedEndIso;
     const targets = buildCatchUpProjectedControls(
       model.waypoints,
@@ -1693,8 +1698,10 @@ export function createJourneyController(
     const startPts = model.projectedControlPoints.map((p) => p.clone());
 
     const newProjectedEndIso = snapshot.projectedEndIso;
-    const cascaded = computeCascadedSchedule(model.waypoints, appliedRecoveries);
-    const newDaysBehind = cascaded[cascaded.length - 1].cascadeAfter;
+    const newDaysBehind = projectedFinish(
+      model.waypoints,
+      computeProjectedSchedule(model.waypoints, appliedRecoveries)
+    ).daysBehind;
 
     const projectedLabel = screenLabels.find((l) => l.el.dataset.kind === "projectedEnd");
     const startTickX = projectedEndTick?.position.x ?? dateToX(model.timeline.projectedEnd, scale);
