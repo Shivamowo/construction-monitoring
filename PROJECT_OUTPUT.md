@@ -859,3 +859,66 @@ Planned start stays a floor, so a route can bring work back onto plan but never 
 A mid-chain revert (ghost 1 → back to 30 Jan with the crane route re-offered), re-taking the crane and then reverting to ghost 0 all land consistently. `tsc --noEmit` clean. ESLint on every touched file shows the same findings as HEAD (diffed). t0/t2 have zero errors and no routes. Schependomlaan has zero errors and still offers its 2 FORGED template routes: the brief says it has none, but it does, for its severe delays, as before this change.
 
 **Not changed:** the Design Review route (self-authored) is worth 0 days to the finish under CPM (5 days of float, no successors). It stays on offer, and Task 2's detail says so rather than hiding it. A claw-back route still moves the recovered waypoint's own projected end (Detailed Design shows 1 Nov after the route although it finished 6 Nov); the milestone roll-up reports the measured finish for completed work.
+
+---
+### 2026-09-28 (cont.) — Route colour system (Task 3 of 3)
+
+**System** (`scene/pathMeshes.ts` `ROUTE_COLORS` / `STATUS_COLORS`, mirrored as CSS vars in the module):
+- **Identity** (which line is this?) uses only cool hues and neutrals.
+- **Status** (is something wrong?) uses only warm hues: red for delay and critical, amber for predicted risk. No route wears a status colour. The old projected line was the exact amber of the forecast-risk markers sitting on it (`#9A6614`), so it moved to blue. Amber is now only ever risk, and the markers pop off the line instead of vanishing into it. The scrubber's projected state and the "Projected end" label follow; the old terracotta and red on the scrubber's projected tag were also status colours worn as identity.
+
+Colour is never the only channel:
+
+| Role | Colour | Weight | Line | Position | Label |
+|---|---|---|---|---|---|
+| actual | light teal | medium | solid | behind today | "Today" at its end |
+| projected (at risk) | blue | medium | **long-dash tube** | on the path | "Projected end" |
+| taken | deep blue | **thickest**, glossy | solid | on the path | "Projected end" (blue) |
+| offered | pale grey | thin, flat-shaded | solid | **lifted**, one full lift higher per nesting level | "Alternate route (· level N)" |
+| superseded | mid grey | thinnest | **short-dash tube** | **dropped** below the live path | "Superseded · <finish>" (dashed plate, clickable) |
+| planned | graphite | thin | solid | on the plan | "Planned end" |
+
+Dashes are an alpha map striped along each tube's length, so dashed lines keep the full tube weight. The old ghost was a 1 px `LineDashedMaterial`, hard to see and harder to click. The 1 px projected dash overlay is gone, since the tube itself is dashed. The today marker's crossbar was amber and is now neutral ink (today isn't a risk).
+
+**Checked in the scene, not a picker.** Every figure below was measured from rendered pixels: headless Chrome at DPR 2, zoomed with the scene's own + button, t1 before and after taking a route. It is the median of each tube's most-chromatic core (hue-window sampling for hued roles; low-chroma darkest-core sampling in isolated boxes for neutrals). ΔE uses the dataviz skill's own validator maths (Machado 2009 severity 1.0, OKLab ×100), imported from its script, not reimplemented.
+
+Tuning took five render→measure passes; the first pass failed badly. Lit and translucent, the projected blue rendered pale sky-blue (`#9cc6ef`), and superseded and offered rendered as the same pixel colour (`#bac3cd`). The fix was a lightness ladder, not hue:
+
+| Role | Planned | Taken | Projected | Actual | Superseded | Offered | Background |
+|---|---|---|---|---|---|---|---|
+| Rendered L | .43 | .54 | .58 | .75 | .66 | .87 | .98 |
+
+To get there:
+- **Bases:** planned `#191C20` with low env reflection, projected `#0F3766` opaque, taken `#123A6A` with emissive .3, actual `#00765A`.
+- **Neutrals:** offered pushed very pale and superseded mid-grey. Actual is squeezed between projected and offered, and this was the only arrangement where all three separate.
+- **Delay band:** darker body (`#7E2019`, opacity .96, no self-glow), so it separates from the teal it sleeves by lightness; protanopia removes the hue difference.
+
+Rendered: planned `#4e5154` · actual `#64c2a5` · projected `#517cb9` · taken `#406eb0` · offered `#d0d4d9` · superseded `#89929c` · delay band `#d26057` · risk `#b27f3d`.
+
+**CVD separation, adjacent (co-visible) pairs, OKLab ΔE ×100:**
+
+| pair | normal | protan | deutan | tritan |
+|---|---|---|---|---|
+| actual–projected | 21.7 | 21.7 | 21.0 | 17.2 |
+| actual–taken | 25.8 | 25.9 | 25.6 | 21.1 |
+| actual–planned | 33.0 | 34.7 | 31.4 | 33.0 |
+| actual–offered | 15.6 | 9.7 | 12.2 | 16.1 |
+| projected–planned | 17.9 | 19.2 | 17.2 | 16.9 |
+| taken–planned | 15.1 | 16.0 | 14.6 | 13.5 |
+| projected–offered | 30.2 | 28.2 | 31.3 | 30.5 |
+| taken–offered | 34.8 | 32.7 | 36.1 | 34.1 |
+| taken–superseded | 15.4 | 13.6 | 16.5 | 13.8 |
+| offered–superseded | 21.3 | 21.0 | 21.4 | 21.3 |
+| planned–superseded | 22.3 | 22.6 | 22.2 | 22.2 |
+| offered–planned | 43.5 | 43.5 | 43.5 | 43.5 |
+| delay band–actual | 26.4 | 22.2 | 12.8 | 32.0 |
+| delay band–projected | 23.3 | 14.9 | 19.6 | 29.1 |
+| risk–projected | 21.6 | 19.3 | 22.0 | 20.7 |
+| risk–taken | 24.0 | 20.7 | 24.8 | 21.7 |
+
+- **Adjacent pairs:** worst CVD 9.7 (actual–offered, protan), worst normal 15.1 (taken–planned). All pass ≥ 8 CVD and ≥ 15 normal.
+- **Validator on the hued identities** (projected, actual, taken, in adjacency order): lightness band, chroma floor, CVD (worst 21.0) and normal-vision floor (21.7) all pass.
+- **Contrast relief:** actual is 2.03:1 against the surface. The skill makes that legal only with visible labels: the line is anchored by the "Today" label and Task 2's direct label.
+- **The one failing pair, projected–superseded (11.5 normal), is never on screen together.** A ghost exists only once a route is taken, and taking a route replaces the projected tube with the taken one.
+
+**Verified:** `tsc --noEmit` clean, no new ESLint findings (diffed against HEAD). t0/t1/t2/Schependomlaan load with zero page/console errors. t0 reads as a single dashed-blue plan with amber risk markers. Schependomlaan still shows teal actual, graphite planned and its two pale FORGED offers.

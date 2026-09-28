@@ -41,13 +41,13 @@ import {
   createOrUpdateProjectedTube,
   createOrUpdateTakenRouteTube,
   createPlannedTube,
-  createProjectedDashLine,
   createRoutePreviewLine,
+  GHOST_OPACITY,
+  GHOST_OPACITY_HOVER,
   createTodayMarker,
   createMilestoneMarker,
   routePreviewLiftAt,
   updateCriticalPathAccentTube,
-  updateProjectedDashLine,
   updateRoutePreviewLine,
 } from "./pathMeshes";
 
@@ -145,7 +145,7 @@ interface CommitSnapshot {
   /** Clone of model.projectedControlPoints as they were BEFORE this commit. */
   controlPoints: THREE.Vector3[];
   projectedEndIso: string;
-  ghostLine: THREE.Line;
+  ghostLine: THREE.Mesh;
   /** Clickable "Superseded · <finish>" tag at the ghost's end — with a chain
    * of ghosts stacked along one path, the only way to tell which is which. */
   ghostLabel: ScreenLabel;
@@ -326,13 +326,11 @@ export function createJourneyController(
 
   let projectedMesh = createOrUpdateProjectedTube(model.projectedCurve);
   root.add(projectedMesh);
-  const projectedDash = createProjectedDashLine(model.projectedCurve);
-  root.add(projectedDash);
 
   // Ghosts of superseded projected-path states, one per commit. Each is
   // clickable and reverts the path to the state captured in the matching
   // commitHistory entry; ghosts after a revert target are discarded.
-  const ghostLines: THREE.Line[] = [];
+  const ghostLines: THREE.Mesh[] = [];
   const commitHistory: CommitSnapshot[] = [];
 
   // Once any route is taken, the entire forward path becomes the confident
@@ -894,17 +892,14 @@ export function createJourneyController(
       if (!takenMesh.parent) root.add(takenMesh);
       takenMesh.visible = true;
       projectedMesh.visible = false;
-      projectedDash.visible = false;
     } else {
       projectedMesh = createOrUpdateProjectedTube(
         model.projectedCurve,
         projectedMesh
       );
-      updateProjectedDashLine(projectedDash, model.projectedCurve);
       // Reverting past every commit puts the path back "at risk", so undo the
       // swap above — the taken tube hides and the amber projected one returns.
       projectedMesh.visible = true;
-      projectedDash.visible = true;
       if (takenMesh) takenMesh.visible = false;
     }
   }
@@ -1023,8 +1018,8 @@ export function createJourneyController(
     // Ghosts stay faint as "superseded" styling; only the hovered one lifts,
     // so it reads as clickable without undoing that intent globally.
     for (const g of ghostLines) {
-      const mat = g.material as THREE.LineDashedMaterial;
-      const wanted = g.userData.historyIndex === hoveredGhostIndex ? 0.55 : 0.2;
+      const mat = g.material as THREE.MeshBasicMaterial;
+      const wanted = g.userData.historyIndex === hoveredGhostIndex ? GHOST_OPACITY_HOVER : GHOST_OPACITY;
       if (mat.opacity !== wanted) mat.opacity = wanted;
     }
 
@@ -1408,9 +1403,14 @@ export function createJourneyController(
       let current = entry;
       if (!current) {
         const branchX = points[0].x;
-        const stackIndex = [...alternateRoutes.values()].filter(
-          (e) => e.line.visible && Math.abs(e.points[0].x - branchX) < ALT_ROUTE_STACK_PROXIMITY_X
-        ).length;
+        // Nesting depth is carried by elevation: each level rides a full
+        // lift higher (two stack steps) than the level it leaves, so a
+        // level-2 offer can't be mistaken for a sibling of level 1.
+        const stackIndex =
+          [...alternateRoutes.values()].filter(
+            (e) => e.line.visible && Math.abs(e.points[0].x - branchX) < ALT_ROUTE_STACK_PROXIMITY_X
+          ).length +
+          2 * (offer.depth - 1);
         const line = createRoutePreviewLine(points, stackIndex);
         line.userData.kind = "alternate-route";
         line.userData.offerId = offer.id;

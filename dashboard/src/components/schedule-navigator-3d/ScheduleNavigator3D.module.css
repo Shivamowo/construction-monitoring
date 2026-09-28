@@ -1,6 +1,8 @@
 /* Spacing: 4px base → 8px rhythm (space-2). Chrome and scene share one
-   neutral surface family; route hues are validated per the dataviz palette
-   checks (teal #00806b / ochre #c1811c / blue #2a6db8 / red #b3352e). */
+   neutral surface family. Route colours follow the system in
+   scene/pathMeshes.ts: cool hues/neutrals = route IDENTITY, warm = STATUS
+   (red delay, amber risk), never swapped. Flat values below are what the
+   lit 3D tubes render as. */
 .root {
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -38,6 +40,14 @@
      alternate you have not taken should read as an option, not a route, the
      same convention Maps uses. */
   --route-alt: #9ba3ac;
+  --route-actual: #00806b;
+  --route-projected: #2a6db8;
+  --route-taken: #1d4f8c;
+  --route-offered-ink: #56687e;
+  --route-superseded: #6f7780;
+  --route-planned: #3a4048;
+  --status-delay: #b3352e;
+  --status-risk: #c1811c;
   --ease-ui: 0.28s cubic-bezier(0.33, 1, 0.68, 1);
   /* ≈ power2.out */
 
@@ -180,7 +190,7 @@
 }
 
 .scrubBarProjected {
-  border-color: rgba(193, 129, 28, 0.4);
+  border-color: rgba(42, 109, 184, 0.4);
   background: linear-gradient(165deg,
       rgba(253, 250, 243, 0.94) 0%,
       rgba(250, 248, 242, 0.94) 100%);
@@ -276,11 +286,11 @@
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #b3352e;
-  border: 1px dashed rgba(193, 129, 28, 0.45);
+  color: var(--route-projected);
+  border: 1px dashed rgba(42, 109, 184, 0.45);
   border-radius: calc(var(--chrome-radius) - 4px);
   background: repeating-linear-gradient(90deg,
-      rgba(193, 129, 28, 0.08) 0 6px,
+      rgba(42, 109, 184, 0.08) 0 6px,
       transparent 6px 12px);
   max-height: 3rem;
   opacity: 1;
@@ -495,9 +505,9 @@
 }
 
 .scrubberCurrentTagProjected {
-  background: rgba(193, 129, 28, 0.12);
-  color: #b3352e;
-  border-color: rgba(193, 129, 28, 0.35);
+  background: rgba(42, 109, 184, 0.1);
+  color: var(--route-projected);
+  border-color: rgba(42, 109, 184, 0.35);
 }
 
 .scrubberTrackArea {
@@ -534,7 +544,7 @@
   top: 0;
   bottom: 0;
   border-radius: 3px;
-  background: linear-gradient(90deg, #dfd0b5, #c45a32);
+  background: linear-gradient(90deg, #c9d6e6, var(--route-projected));
   pointer-events: none;
 }
 
@@ -560,8 +570,8 @@
 }
 
 .scrubberTickProjected {
-  background: #c45a32;
-  box-shadow: 0 0 5px rgba(193, 129, 28, 0.7);
+  background: var(--route-projected);
+  box-shadow: 0 0 5px rgba(42, 109, 184, 0.6);
   z-index: 2;
 }
 
@@ -635,10 +645,10 @@
 }
 
 .scrubberThumbProjected {
-  border-color: #c45a32;
+  border-color: var(--route-projected);
   box-shadow:
     0 2px 6px rgba(14, 20, 28, 0.3),
-    0 0 8px rgba(193, 129, 28, 0.35);
+    0 0 8px rgba(42, 109, 184, 0.35);
 }
 
 .scrubberThumbGrip {
@@ -891,7 +901,7 @@
   border-radius: 1px;
   flex-shrink: 0;
   background: repeating-linear-gradient(90deg,
-      #c1811c 0 5px,
+      var(--route-projected) 0 5px,
       transparent 5px 9px);
   opacity: 0.9;
 }
@@ -900,8 +910,7 @@
   width: 1rem;
   height: 0.16rem;
   flex-shrink: 0;
-  background: var(--route-alt);
-  opacity: 0.6;
+  background: #a5b4c6;
 }
 
 .swatchTaken {
@@ -909,8 +918,7 @@
   height: 0.34rem;
   border-radius: 1px;
   flex-shrink: 0;
-  background: #0d3f81;
-  box-shadow: 0 0 4px rgba(26, 115, 232, 0.5);
+  background: var(--route-taken);
 }
 
 .swatchToday {
@@ -1024,9 +1032,9 @@
   height: 0.14rem;
   flex-shrink: 0;
   background: repeating-linear-gradient(90deg,
-      #56524c 0 4px,
-      transparent 4px 7px);
-  opacity: 0.75;
+      var(--route-superseded) 0 3px,
+      transparent 3px 6px);
+  opacity: 0.8;
 }
 
 .forecastTag {
@@ -1260,20 +1268,40 @@
 }
 
 .axisKey[data-kind="projectedEnd"] {
-  color: #c1811c;
+  color: var(--route-projected);
 }
 
 .axisKey[data-kind="projectedEnd"][data-route-taken="true"] {
-  color: #0d3f81;
+  color: var(--route-taken);
 }
 
-/* Alternate-route DOM label — neutral gray to match the solid preview line;
+/* Alternate-route DOM label — slate ink (the pale line colour itself is too
+   light to read as text) over a solid rule in the line's own colour;
    purely informational, so it never intercepts clicks meant for the line
    beneath. */
 .axisKey[data-kind="route"] {
-  color: var(--route-alt);
+  color: var(--route-offered-ink);
   pointer-events: none;
   cursor: default;
+}
+
+.axisKey[data-kind="route"] [data-part="text"] {
+  border-bottom: 2px solid #a5b4c6;
+}
+
+/* Superseded-route tag at a ghost's end. Dashed plate echoes the dashed
+   ghost line; it IS the click target for reverting to that route. */
+.axisKey[data-kind="ghost"] {
+  color: var(--route-superseded);
+}
+
+.axisKey[data-kind="ghost"] [data-part="text"] {
+  border: 1px dashed var(--route-superseded);
+  box-shadow: none;
+}
+
+.axisKey[data-kind="ghost"]:hover {
+  color: #141414;
 }
 
 .axisToday {
