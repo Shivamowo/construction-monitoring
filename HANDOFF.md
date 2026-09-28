@@ -199,12 +199,10 @@ Honest list. None of these are hidden bugs — they are documented decisions.
    export format yet. `shared/scripts/ingest-recovery-plan.ts` has an `--inspect` mode
    ready to receive a real sample and is deliberately left inert until one exists.
    `substation-t1/recovery-plan.json` is demo data, labelled as such.
-3. **`milestoneAlerts` has no dedicated UI panel.** The data layer computes delay days
-   and root cause per milestone; the scene renders the red band, but there is no list
-   view surfacing the alerts directly.
-4. **Camera framing on first paint** can push the start of the route off-screen on
-   Phase 2, so the red milestone band is not always visible until you zoom out. The
-   intro framing is deliberately tuned; changing it needs care.
+3. ~~`milestoneAlerts` has no dedicated UI panel.~~ Done 28 Sep 2026: "Milestone alerts"
+   panel under the legend (`MilestoneAlertsPanel.tsx`), click to focus the span.
+4. ~~Camera framing on first paint~~ Fixed 28 Sep 2026 — cause was a mount-time camera
+   fly inside the alternate-route builder, not the intro frame itself. See the log.
 5. **Stage 4 not started** — continuous execution watching and re-projection. Depends
    on the real recovery-plan format landing first.
 

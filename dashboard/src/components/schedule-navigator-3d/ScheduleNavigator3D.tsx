@@ -23,6 +23,7 @@ import {
 } from "@/lib/schedule-navigator/cpm";
 import { NextUpBanner } from "./NextUpBanner";
 import { DemoTourPanel } from "@/components/DemoTour";
+import { MilestoneAlertsPanel } from "./MilestoneAlertsPanel";
 import { ProvenanceBadge } from "@/components/ProvenanceBadge";
 import {
   createJourneyController,
@@ -1119,7 +1120,15 @@ export function ScheduleNavigator3D() {
             </li>
           </ul>
         </div>
+        {/* Tour narration first: it's the thing being read while the tour
+            runs, so the alerts list must not push it out of view. */}
         <DemoTourPanel />
+        <MilestoneAlertsPanel
+          alerts={data?.milestoneAlerts}
+          onFocus={(alert) =>
+            controllerRef.current?.focusDateSpan(alert.plannedStart, alert.plannedEnd)
+          }
+        />
       </aside>
       </div>
     </div>

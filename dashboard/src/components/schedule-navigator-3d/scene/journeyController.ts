@@ -203,6 +203,12 @@ export interface JourneyController {
   getRouteScreenAnchor: (
     waypointId: string
   ) => { x: number; y: number; onScreen: boolean } | null;
+  /**
+   * Fly the camera to a date span on the route (e.g. a milestone's planned
+   * start→end), pulled back far enough to hold the whole span. Same camera
+   * tween as a shard click.
+   */
+  focusDateSpan: (startIso: string, endIso: string) => void;
   shardCount: number;
   clusterCount: number;
   todayWaypointIndex: number;
@@ -244,7 +250,7 @@ export function createJourneyController(
   pmrem.dispose();
 
   const camera = new THREE.PerspectiveCamera(38, width / Math.max(height, 1), 0.1, 200);
-  const frame = computeCinematicFrame(model);
+  const frame = computeCinematicFrame(model, camera);
   // First mount only — instant place; all later camera motion is GSAP.
   camera.position.copy(frame.camPos);
   camera.lookAt(frame.target);
@@ -803,14 +809,28 @@ export function createJourneyController(
     });
   }
 
+  /** Default flyToFocus offset comfortably holds about this much route (world units). */
+  const FOCUS_SPAN_COMFORT = 9;
+
+  function focusDateSpan(startIso: string, endIso: string) {
+    const points = milestoneBandPoints(startIso, endIso);
+    if (points.length === 0) return;
+    const box = new THREE.Box3().setFromPoints(points);
+    const center = box.getCenter(new THREE.Vector3());
+    const extent = box.getSize(new THREE.Vector3()).length();
+    flyToFocus(center, Math.max(1, extent / FOCUS_SPAN_COMFORT));
+  }
+
   function pauseIdleForOrbit() {
     killIdleTweens();
   }
 
-  function flyToFocus(focusLocal: THREE.Vector3) {
+  function flyToFocus(focusLocal: THREE.Vector3, distanceScale = 1) {
     const focus = focusLocal.clone().applyMatrix4(root.matrixWorld);
     const target = focus.clone().add(new THREE.Vector3(0, 0.3, 0));
-    const camPos = focus.clone().add(new THREE.Vector3(-4.8, 4.6, 8.8));
+    const camPos = focus
+      .clone()
+      .add(new THREE.Vector3(-4.8, 4.6, 8.8).multiplyScalar(distanceScale));
 
     idleActive = false;
     killIdleTweens();
@@ -1298,7 +1318,10 @@ export function createJourneyController(
   }
   const alternateRoutes: AlternateRouteEntry[] = [];
 
-  function buildAlternateRoutePoints(waypointId: string): THREE.Vector3[] | null {
+  function buildAlternateRoutePoints(
+    waypointId: string,
+    opts: { focusCamera?: boolean } = {}
+  ): THREE.Vector3[] | null {
     const wp = model.waypoints.find((w) => w.id === waypointId);
     const daysRecovered = recoveryDaysForWaypoint(wp);
     if (!wp || daysRecovered <= 0) return null;
@@ -1317,7 +1340,7 @@ export function createJourneyController(
       { ...appliedRecoveries, [waypointId]: daysRecovered },
       scale
     );
-    if (targets?.length) {
+    if (targets?.length && opts.focusCamera !== false) {
       flyToFocus(targets[Math.min(2, targets.length - 1)]);
     }
     if (!targets || targets.length < 2) return null;
@@ -1340,7 +1363,9 @@ export function createJourneyController(
   const placedBranchXs: number[] = [];
 
   planBearingIds.forEach((waypointId) => {
-    const points = buildAlternateRoutePoints(waypointId);
+    // Mount-time build: no camera fly. Flying here overrode the intro frame
+    // on any project with a route on offer, cropping the route start.
+    const points = buildAlternateRoutePoints(waypointId, { focusCamera: false });
     if (!points) return;
     const branchX = points[0].x;
     const stackIndex = placedBranchXs.filter(
@@ -1850,6 +1875,7 @@ export function createJourneyController(
       applyCriticalPathVisibility();
     },
     setScrubIso,
+    focusDateSpan,
     setScrubbing: (active: boolean) => {
       scrubbing = active;
       if (active) {
@@ -1890,7 +1916,13 @@ export function createJourneyController(
   };
 }
 
-function computeCinematicFrame(model: NavigatorPathModel) {
+/** NDC half-extent the route must fit inside — leaves room for the overlay chrome. */
+const FRAME_FIT_NDC = 0.86;
+
+function computeCinematicFrame(
+  model: NavigatorPathModel,
+  camera: THREE.PerspectiveCamera
+) {
   const mid = new THREE.Vector3();
   if (!model.bounds.isEmpty()) model.bounds.getCenter(mid);
   else mid.set(21, 1, 0);
@@ -1906,6 +1938,77 @@ function computeCinematicFrame(model: NavigatorPathModel) {
     mid.y + 9.2,
     mid.z + span * 0.42
   );
+
+  // Keep the tuned viewing direction; re-centre the target on the route's
+  // on-screen footprint and pull back along that direction until every
+  // corner of the route bounds (route start through finish, plus the axis
+  // rails) projects inside the frame. Never closer than the tuned distance.
+  if (!model.bounds.isEmpty()) {
+    const dir = camPos.clone().sub(target);
+    const baseDistance = dir.length();
+    dir.normalize();
+    const corners: THREE.Vector3[] = [];
+    const { min, max } = model.bounds;
+    for (const x of [min.x, max.x])
+      for (const y of [min.y, max.y])
+        for (const z of [min.z, max.z])
+          corners.push(new THREE.Vector3(x, y, z));
+
+    const probe = camera.clone();
+    const ndc = new THREE.Vector3();
+    const place = (distance: number) => {
+      probe.position.copy(target).addScaledVector(dir, distance);
+      probe.lookAt(target);
+      probe.updateMatrixWorld();
+    };
+    const fits = (distance: number) => {
+      place(distance);
+      return corners.every((c) => {
+        ndc.copy(c).project(probe);
+        return (
+          ndc.z < 1 && Math.abs(ndc.x) <= FRAME_FIT_NDC && Math.abs(ndc.y) <= FRAME_FIT_NDC
+        );
+      });
+    };
+    const fitDistance = () => {
+      if (fits(baseDistance)) return baseDistance;
+      let lo = baseDistance;
+      let hi = baseDistance * 4;
+      if (!fits(hi)) return hi;
+      for (let i = 0; i < 24; i++) {
+        const midDistance = (lo + hi) / 2;
+        if (fits(midDistance)) hi = midDistance;
+        else lo = midDistance;
+      }
+      return hi;
+    };
+
+    const right = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+    for (let pass = 0; pass < 3; pass++) {
+      const distance = fitDistance();
+      place(distance);
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const c of corners) {
+        ndc.copy(c).project(probe);
+        minX = Math.min(minX, ndc.x);
+        maxX = Math.max(maxX, ndc.x);
+        minY = Math.min(minY, ndc.y);
+        maxY = Math.max(maxY, ndc.y);
+      }
+      const halfH = distance * Math.tan(halfFov);
+      right.setFromMatrixColumn(probe.matrixWorld, 0);
+      up.setFromMatrixColumn(probe.matrixWorld, 1);
+      target
+        .addScaledVector(right, ((minX + maxX) / 2) * halfH * camera.aspect)
+        .addScaledVector(up, ((minY + maxY) / 2) * halfH);
+    }
+    camPos.copy(target).addScaledVector(dir, fitDistance());
+  }
   return { camPos, target, span };
 }
 
